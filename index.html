@@ -136,6 +136,24 @@
   <div id="ls-conn" class="ls" style="display:none">
     <div id="lb-connected">✅ Connected! Starting…</div>
   </div>
+
+  <!-- Tournament screen -->
+  <div id="ls-tournament" class="ls" style="display:none">
+    <h2>🏆 TOURNAMENT MODE</h2>
+    <p style="margin-bottom:6px">Beat all 5 animals to become CHAMPION!</p>
+    <div class="animal-row">
+      <button class="animal-btn sel" id="lb-t-an-elephant">ELEPHANT</button>
+      <button class="animal-btn" id="lb-t-an-lion">LION</button>
+      <button class="animal-btn" id="lb-t-an-cat">CAT</button>
+      <button class="animal-btn" id="lb-t-an-gorilla">GORILLA</button>
+      <button class="animal-btn" id="lb-t-an-rabbit">RABBIT</button>
+      <button class="animal-btn" id="lb-t-an-crocodile">CROC</button>
+    </div>
+    <p class="stats-label">OPPONENT ORDER (random)</p>
+    <div id="lb-t-order" style="color:#FFD700;font-size:13px;margin:6px 0 14px;font-family:Arial,sans-serif"></div>
+    <button id="lb-t-start" style="background:#aa00cc;color:#fff;margin-top:6px;padding:13px 36px;font-size:16px">🏆 START TOURNAMENT</button>
+    <button class="lb-link" id="lb-t-back">← Back</button>
+  </div>
 </div>
 
 <!-- Firebase 10.x compat SDK (loaded only when needed) -->
@@ -1020,6 +1038,7 @@ class Game{
     this._btns=[];              // canvas clickable button rects
     this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;
     this._aiRageTimer=0;
+    this._tournament=null; // {opponents:[...], idx:0, wins:0, losses:0}
     this.fighters=[
       new Fighter(220,.5,COL.p1),
       new Fighter(580,.5,COL.p2),
@@ -1207,7 +1226,33 @@ class Game{
       }
     }
     else if(this.state==='over'){
-      if(inp.was('Space')||inp.was('Enter'))this._returnToTitle();
+      if(inp.was('Space')||inp.was('Enter')){
+        if(this._tournament){
+          const t=this._tournament;
+          const[f1,f2]=this.fighters;
+          const playerWon=f1.totalScore>=f2.totalScore;
+          if(playerWon)t.wins++;else t.losses++;
+          t.idx++;
+          if(t.losses>0){// lost — tournament over
+            this._tournament=null;this._returnToTitle();
+          }else if(t.idx>=t.opponents.length){// beat all opponents!
+            this._tournament.champion=true;
+            this.state='champion';this.msgT=999;
+          }else{// next fight
+            this.fighters[1].animal=t.opponents[t.idx];
+            this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;this._aiRageTimer=0;
+            this._newGame();
+          }
+        }else{
+          this._returnToTitle();
+        }
+      }
+    }
+    else if(this.state==='champion'){
+      if(inp.was('Space')||inp.was('Enter')){
+        if(this._tournament)this._unlockNinjaCat();
+        this._tournament=null;this._returnToTitle();
+      }
     }
     inp.flush();
   }
@@ -1254,6 +1299,20 @@ class Game{
     this.msgT=this.round<TOTAL_ROUNDS?190:90;
   }
 
+  _startTournament(playerAnimal){
+    // Shuffle all animals except player's into opponent list
+    const opps=ANIMALS.filter(a=>a!==playerAnimal).sort(()=>Math.random()-.5);
+    this._tournament={opponents:opps,idx:0,wins:0,losses:0,playerAnimal};
+    this.mode='ai';this.myIdx=0;
+    this.fighters[0].animal=playerAnimal;
+    this.myAnimal=playerAnimal;
+    this.fighters[1].animal=opps[0];
+    this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;this._aiRageTimer=0;
+    this._newGame();
+  }
+  _unlockNinjaCat(){
+    try{localStorage.setItem('bns_ninjaCat','1');}catch{}
+  }
   _returnToTitle(){
     this.net.disconnect();
     this.state='title';this.audio.stop();
@@ -1337,6 +1396,7 @@ class Game{
       if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){
         if(b.id==='online'){this._showLobby()}
         else if(b.id==='vsai'){this._showLobbyAI()}
+        else if(b.id==='tournament'){this._showTournament&&this._showTournament()}
         break;
       }
     }
@@ -1345,7 +1405,7 @@ class Game{
   // ── Lobby UI ──────────────────────────────────────────────────────────────
   _initLobbyUI(){
     const $ = id=>document.getElementById(id);
-    const allScreens=['ls-ai','ls-main','ls-host','ls-join','ls-conn'];
+    const allScreens=['ls-ai','ls-main','ls-host','ls-join','ls-conn','ls-tournament'];
     const showScreen=id=>{
       allScreens.forEach(s=>{$(s).style.display=s===id?'':'none'});
     };
@@ -1434,6 +1494,33 @@ class Game{
 
     // BACK from join screen
     $('lb-jback').onclick=()=>{showScreen('ls-main')};
+
+    // TOURNAMENT
+    const showTournament=()=>{
+      allScreens.concat(['ls-tournament']).forEach(s=>{$(s)&&($(s).style.display=s==='ls-tournament'?'':'none')});
+      $('ls-tournament').style.display='';
+      const opps=ANIMALS.filter(a=>a!==this.myAnimal).sort(()=>Math.random()-.5);
+      $('lb-t-order').textContent=opps.map((a,i)=>`${i+1}. ${a}`).join('  →  ');
+      document.getElementById('lobby').classList.add('show');
+    };
+    // tournament animal buttons
+    let tAnimal=this.myAnimal;
+    const setTAnimal=a=>{
+      tAnimal=a;
+      ANIMALS.forEach(n=>{const el=$('lb-t-an-'+n);if(el)el.classList.toggle('sel',n===tAnimal);});
+      const opps=ANIMALS.filter(x=>x!==tAnimal).sort(()=>Math.random()-.5);
+      $('lb-t-order').textContent=opps.map((x,i)=>`${i+1}. ${x}`).join('  →  ');
+    };
+    ANIMALS.forEach(n=>{const el=$('lb-t-an-'+n);if(el)el.onclick=()=>setTAnimal(n);});
+    const tStart=$('lb-t-start');
+    if(tStart)tStart.onclick=()=>{
+      document.getElementById('lobby').classList.remove('show');
+      this._startTournament(tAnimal);
+    };
+    const tBack=$('lb-t-back');
+    if(tBack)tBack.onclick=()=>document.getElementById('lobby').classList.remove('show');
+    // Expose showTournament so title screen can call it
+    this._showTournament=showTournament;
   }
 
   _showLobby(){
@@ -1500,6 +1587,7 @@ class Game{
     if(this.state==='roundEnd')this._victory(ctx);
     if((this.state==='cd'||this.msgT>0)&&this.msg)this._msg(ctx);
     if(this.state==='over')this._over(ctx);
+    if(this.state==='champion')this._champion(ctx);
     ctx.restore();
   }
 
@@ -1811,13 +1899,14 @@ class Game{
       ctx.fillText(label,x+w/2,y+h/2+6);
       this._btns.push({x,y,w,h,id});
     };
-    drawBtn(GW/2-100,310,190,46,'🤖  VS COMPUTER','#885500','vsai');
+    drawBtn(GW/2-100,302,190,42,'🤖  VS COMPUTER','#885500','vsai');
+    drawBtn(GW/2-100,352,190,42,'🏆  TOURNAMENT','#880088','tournament');
     if(ONLINE_ENABLED){
-      drawBtn(GW/2-100,366,190,46,'🌐  ONLINE PLAY','#003399','online');
+      drawBtn(GW/2-100,402,190,42,'🌐  ONLINE PLAY','#003399','online');
     }else{
-      ctx.fillStyle='rgba(255,255,255,0.18)';rrect(ctx,GW/2-100,366,190,46,10);
+      ctx.fillStyle='rgba(255,255,255,0.18)';rrect(ctx,GW/2-100,402,190,42,10);
       ctx.fillStyle='#555';ctx.font='bold 13px Arial Black,Arial';ctx.textAlign='center';
-      ctx.fillText('🌐  ONLINE',GW/2,388);ctx.font='11px Arial';ctx.fillText('(add Firebase config)',GW/2,404);
+      ctx.fillText('🌐  ONLINE',GW/2,422);ctx.font='11px Arial';ctx.fillText('(add Firebase config)',GW/2,438);
     }
   }
 
@@ -1942,9 +2031,54 @@ class Game{
     ctx.strokeStyle='#000';ctx.lineWidth=6;ctx.strokeText(winner,GW/2,145);ctx.fillStyle=wc;ctx.fillText(winner,GW/2,145);
     ctx.fillStyle='#fff';ctx.font='bold 22px Arial';ctx.fillText(`${n1}: ${f1.totalScore} pts      ${n2}: ${f2.totalScore} pts`,GW/2,200);
     ctx.fillStyle='#aaa';ctx.font='17px Arial';ctx.fillText(`Rounds — ${n1}: ${f1.roundsWon}   ${n2}: ${f2.roundsWon}`,GW/2,235);
+    if(this._tournament){
+      const t=this._tournament;
+      const remaining=t.opponents.length-t.idx-1;
+      ctx.fillStyle='#aa00ff';ctx.font='bold 16px Arial Black,Arial';
+      ctx.fillText(`🏆 TOURNAMENT: Fight ${t.idx+1} of ${t.opponents.length}`,GW/2,270);
+      if(f1.totalScore>=f2.totalScore&&remaining>0){
+        const nextOpp=t.opponents[t.idx+1];
+        ctx.fillStyle='#ffaa00';ctx.font='bold 14px Arial';
+        ctx.fillText(`NEXT: ${nextOpp.toUpperCase()} →  SPACE to continue`,GW/2,296);
+      }else if(f1.totalScore<f2.totalScore){
+        ctx.fillStyle='#ff4444';ctx.font='bold 14px Arial';
+        ctx.fillText('Tournament over! Better luck next time.',GW/2,296);
+      }else{
+        ctx.fillStyle='#FFD700';ctx.font='bold 16px Arial Black,Arial';
+        ctx.fillText('LAST FIGHT!  SPACE to see results!',GW/2,296);
+      }
+    }
     const p=.55+.45*Math.sin(this.frame*.07);
     ctx.globalAlpha=p;ctx.fillStyle='#FFD700';ctx.font='bold 20px Arial Black,Arial';
-    ctx.fillText('PRESS  SPACE  TO  PLAY  AGAIN',GW/2,GH-35);ctx.globalAlpha=1;
+    ctx.fillText('PRESS  SPACE  TO  CONTINUE',GW/2,GH-35);ctx.globalAlpha=1;
+  }
+  _champion(ctx){
+    ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fillRect(0,0,GW,GH);
+    const f=this.frame;
+    // Spinning trophy
+    ctx.save();ctx.translate(GW/2,GH/2-60);ctx.rotate(Math.sin(f*.04)*.18);
+    ctx.font='96px Arial';ctx.textAlign='center';ctx.fillText('🏆',0,40);ctx.restore();
+    ctx.textAlign='center';
+    ctx.font='bold 58px Arial Black,Arial';ctx.strokeStyle='#000';ctx.lineWidth=6;
+    ctx.strokeText('CHAMPION!',GW/2,90);ctx.fillStyle='#FFD700';ctx.fillText('CHAMPION!',GW/2,90);
+    ctx.fillStyle='#fff';ctx.font='bold 20px Arial';
+    ctx.fillText(`You defeated all ${this._tournament?.opponents?.length||5} opponents!`,GW/2,GH/2+30);
+    ctx.fillStyle='#aa00ff';ctx.font='bold 16px Arial Black,Arial';
+    ctx.fillText('🐱 NINJA CAT UNLOCKED!',GW/2,GH/2+65);
+    ctx.fillStyle='#aaa';ctx.font='13px Arial';
+    ctx.fillText('Now available in the animal selection!',GW/2,GH/2+88);
+    const p=.55+.45*Math.sin(f*.07);
+    ctx.globalAlpha=p;ctx.fillStyle='#FFD700';ctx.font='bold 20px Arial Black,Arial';
+    ctx.fillText('PRESS SPACE TO RETURN',GW/2,GH-35);ctx.globalAlpha=1;
+    // Confetti
+    ctx.save();
+    for(let i=0;i<36;i++){
+      const ang=(i/36)*Math.PI*2+f*.02;
+      const r=140+50*Math.sin(f*.05+i);
+      ctx.globalAlpha=0.75;ctx.fillStyle=['#FFD700','#ff4444','#4488ff','#44ff88','#ff88ff','#ffaa00'][i%6];
+      ctx.beginPath();ctx.arc(GW/2+Math.cos(ang)*r,GH/2-30+Math.sin(ang)*r,4,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;ctx.restore();
   }
 }
 
