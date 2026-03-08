@@ -689,7 +689,7 @@ class Game{
   }
 
   _showLobby(){
-    const$=id=>document.getElementById(id);
+    const $=id=>document.getElementById(id);
     ['ls-main','ls-host','ls-join','ls-conn'].forEach(s=>{
       $(s).style.display=s==='ls-main'?'':'none';
     });
