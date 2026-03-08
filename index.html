@@ -1971,11 +1971,6 @@ class Game{
     rune.addColorStop(0,'#44ffaa');rune.addColorStop(1,'rgba(0,255,120,0)');
     ctx.fillStyle=rune;ctx.beginPath();ctx.ellipse(GW/2,lerp(fY,nY,0.5),110,55,0,0,Math.PI*2);ctx.fill();
     ctx.restore();
-    // Center dividing rune line
-    ctx.save();ctx.globalAlpha=0.5*glow;ctx.strokeStyle='#44ffaa';ctx.lineWidth=1.5;
-    ctx.shadowColor='#44ffaa';ctx.shadowBlur=8*glow;ctx.setLineDash([8,6]);
-    ctx.beginPath();ctx.moveTo(GW/2,nY+20);ctx.lineTo(GW/2,fY);ctx.stroke();
-    ctx.setLineDash([]);ctx.restore();
 
     // Floor edge — stone ledge at near side
     ctx.fillStyle='#141e12';ctx.fillRect(nL,nY+20,nR-nL,14);
