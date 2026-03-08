@@ -541,17 +541,17 @@ class Fighter{
     }
     const wc=Math.sin(walkT);
     if(hitFlash>0&&Math.floor(hitFlash/2)%2===0)ctx.globalAlpha=.38;
+    // Tint entire animal body for active effects
     if(this.speedBoost>0){
-      ctx.save();ctx.globalAlpha=0.28+0.18*Math.sin(this.speedBoost*.25);
-      ctx.strokeStyle='#FFD700';ctx.lineWidth=7;
-      ctx.beginPath();ctx.ellipse(0,-62,30,72,0,0,Math.PI*2);ctx.stroke();
-      ctx.restore();
-    }
-    if(this.raging){
-      this._shockAura(ctx,{shorts:'#cc0000',stripe:'#ff4400',glove:'#ff0000'},0.85+Math.sin(performance.now()*.005)*.15,this.dz*3);
+      const pulse=0.8+0.2*Math.sin(this.speedBoost*.18);
+      ctx.filter=`sepia(1) saturate(5) brightness(${1.1+pulse*.2})`;
+    }else if(this.raging){
+      const pulse=0.85+0.15*Math.sin(performance.now()*.005);
+      ctx.filter=`saturate(5) hue-rotate(310deg) brightness(${0.9+pulse*.2})`;
     }
     if(this.squatTimer>0){ctx.save();ctx.translate(0,26);ctx.scale(1,0.62);this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);ctx.restore();}
     else this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);
+    ctx.filter='none';
     if(this.downTimer>0){
       if(facing===-1)ctx.scale(-1,1); // undo facing flip so label never mirrors
       const secs=Math.ceil(this.downTimer/60);
