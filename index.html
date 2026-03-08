@@ -34,6 +34,9 @@
     #lb-do-join{background:#00993a;margin-top:4px}
     .lb-link{background:transparent!important;color:#666!important;font-size:12px!important;padding:8px 14px!important;margin-top:8px}
     .lb-link:hover{color:#aaa!important}
+    .animal-row{display:flex;gap:8px;justify-content:center;margin:8px 0 14px}
+    .animal-btn{padding:9px 12px!important;font-size:12px!important;background:#1b1b2a!important;color:#bfc6ff!important;border:1px solid #3b3e66!important}
+    .animal-btn.sel{background:#2f4ad8!important;color:#fff!important;border-color:#8aa0ff!important;box-shadow:0 0 0 2px #8aa0ff44 inset}
     #lb-code{font-size:68px;font-weight:900;letter-spacing:14px;color:#FFD700;margin:14px 0;font-family:'Courier New',monospace;text-shadow:0 0 30px #FFD70066}
     #lb-wait{color:#88ff88;font-size:14px;font-weight:normal;margin-top:8px;animation:pulse 1.4s infinite}
     @keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
@@ -58,6 +61,12 @@
   <div id="ls-main" class="ls">
     <h2>🌐 ONLINE PLAY</h2>
     <p>One player hosts, the other joins with the code.</p>
+    <p style="margin-bottom:6px">Choose your animal:</p>
+    <div class="animal-row">
+      <button class="animal-btn sel" id="lb-an-elephant">ELEPHANT</button>
+      <button class="animal-btn" id="lb-an-lion">LION</button>
+      <button class="animal-btn" id="lb-an-cat">CAT</button>
+    </div>
     <div class="row">
       <button id="lb-host">HOST GAME</button>
       <div class="sep"></div>
@@ -129,8 +138,10 @@ const COL={
   p1:{skin:'#e8956d',shorts:'#cc0000',stripe:'#fff',  glove:'#fff',  shoe:'#111',   name:'RED' },
   p2:{skin:'#e8956d',shorts:'#003fcc',stripe:'#ffdd00',glove:'#ffdd00',shoe:'#001a66',name:'BLUE'},
 };
+const ANIMALS=['elephant','lion','cat'];
+const ANIMAL_BITS={elephant:0,lion:1,cat:2};
 const CTRL_ONLINE={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',attack:'Space'};
-const MOVES={punch:{dur:18,dzReach:0.32},kick:{dur:22,dzReach:0.30}};
+const MOVES={punch:{dur:18,dzReach:0.32}};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -146,12 +157,11 @@ function rrect(ctx,x,y,w,h,r){
 // Convert keyboard state to logical input state (attackTick is monotonic).
 function mkState(inp,ctrl,prev){
   const attackPressed=inp.was(ctrl.attack);
-  const attackType=attackPressed?(Math.random()<0.5?'punch':'kick'):(prev.attackType||'punch');
   return{
     left: inp.isDown(ctrl.left), right:inp.isDown(ctrl.right),
     up:   inp.isDown(ctrl.up),   down: inp.isDown(ctrl.down),
     attackTick:(prev.attackTick||0)+(attackPressed?1:0),
-    attackType,
+    animal:(prev.animal&&ANIMAL_BITS[prev.animal]!==undefined)?prev.animal:'elephant',
   };
 }
 
@@ -264,6 +274,7 @@ class Fighter{
     this._at=0; // attack tick tracker
     this.noHitStreak=0;
     this.downTimer=0;
+    this.animal='elephant';
   }
   get sy(){return RG.fY+this.dz*(RG.nY-RG.fY)}
   get sc(){return FAR_SC+this.dz*(NEAR_SC-FAR_SC)}
@@ -272,7 +283,6 @@ class Fighter{
     if(!this.active)return null;
     const ext=Math.sin((1-this.punchTimer/this.punchDur)*Math.PI),s=this.sc;
     if(this.punchType==='punch')return{x:this.x+this.facing*(14+ext*74)*s,y:this.sy-96*s,w:28*s,h:28*s};
-    if(this.punchType==='kick') return{x:this.x+this.facing*(18+ext*82)*s,y:this.sy-38*s,w:32*s,h:32*s};
   }
   get active(){return this.punchType&&this.punchTimer>this.punchDur*.12&&this.punchTimer<this.punchDur*.88}
 
@@ -298,8 +308,8 @@ class Fighter{
       const at=s.attackTick||0;
       if(at>this._at){
         this._at=at;
-        this.punchType=s.attackType==='kick'?'kick':'punch';
-        this.punchDur=this.punchTimer=MOVES[this.punchType].dur;
+        this.punchType='punch';
+        this.punchDur=this.punchTimer=MOVES.punch.dur;
         this.punchHit=false;
       }
     }
@@ -313,9 +323,9 @@ class Fighter{
     this.hitFlash=15;
     const dir=this.x!==att.x?Math.sign(this.x-att.x):att.facing;
     const ddir=this.dz!==att.dz?Math.sign(this.dz-att.dz):0;
-    this.kbx+=dir*(att.punchType==='kick'?9:6);
+    this.kbx+=dir*6;
     this.kbz+=ddir*.05;
-    if(att.punchType==='kick')audio.sfxKick();else audio.sfxPunch();
+    audio.sfxPunch();
     return true;
   }
 
@@ -335,44 +345,7 @@ class Fighter{
     if(hitFlash>0&&Math.floor(hitFlash/2)%2===0)ctx.globalAlpha=.38;
     // Shadow
     ctx.fillStyle='rgba(0,0,0,0.22)';ctx.beginPath();ctx.ellipse(0,2,24,7,0,0,Math.PI*2);ctx.fill();
-    // Shoes
-    ctx.fillStyle=col.shoe;
-    ctx.beginPath();ctx.ellipse(-10+wc*5,0,14,6,0,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.ellipse(10-wc*5,0,13,5,0,0,Math.PI*2);ctx.fill();
-    // Kick leg
-    if(punchType==='kick'){
-      const ext=Math.sin((1-punchTimer/punchDur)*Math.PI);
-      ctx.save();ctx.translate(14,-26);ctx.rotate(-.28-ext*.95);
-      ctx.fillStyle=col.skin;this._r(ctx,-7,0,14,42,3);
-      ctx.fillStyle=col.shoe;ctx.translate(2,44);ctx.rotate(.38);ctx.beginPath();ctx.ellipse(0,0,16,7,0,0,Math.PI*2);ctx.fill();
-      ctx.restore();
-    }
-    // Legs
-    ctx.fillStyle=col.skin;
-    ctx.save();ctx.translate(-10,-4);ctx.rotate(wc*.07);this._r(ctx,-7,-36,14,36,3);ctx.restore();
-    ctx.save();ctx.translate(10,-4);ctx.rotate(-wc*.07);this._r(ctx,-7,-36,14,36,3);ctx.restore();
-    // Shorts
-    ctx.fillStyle=col.shorts;this._r(ctx,-24,-44,48,30,5);ctx.fillStyle=col.stripe;ctx.fillRect(-24,-31,48,4);
-    // Torso
-    ctx.fillStyle=col.skin;this._r(ctx,-22,-96,44,56,8);
-    ctx.fillStyle='rgba(0,0,0,0.07)';for(let i=0;i<3;i++)ctx.fillRect(-12,-90+i*14,24,5);
-    // Block pose
-    if(blocking){
-      ctx.fillStyle=col.skin;
-      ctx.save();ctx.translate(0,-88);ctx.rotate(.4);this._r(ctx,-6,0,12,34,3);ctx.fillStyle=col.glove;ctx.beginPath();ctx.arc(0,36,13,0,Math.PI*2);ctx.fill();ctx.restore();
-      ctx.save();ctx.translate(0,-88);ctx.rotate(-.4);this._r(ctx,-6,0,12,34,3);ctx.fillStyle=col.glove;ctx.beginPath();ctx.arc(0,36,13,0,Math.PI*2);ctx.fill();ctx.restore();
-    }else{
-      this._arm(ctx,col,false,wc);this._arm(ctx,col,true,wc);
-    }
-    // Neck
-    ctx.fillStyle=col.skin;this._r(ctx,-7,-104,14,12,2);
-    // Head
-    ctx.fillStyle=col.skin;ctx.beginPath();ctx.arc(0,-120,20,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle=col.shorts;ctx.beginPath();ctx.arc(0,-120,22,Math.PI,0);ctx.fill();ctx.fillRect(-22,-124,44,8);
-    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(9,-123,6,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#111';ctx.beginPath();ctx.arc(10,-123,3.5,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='#111';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(7,-111,7,.3,Math.PI-.3);ctx.stroke();
-    ctx.fillStyle=col.stripe;ctx.fillRect(2,-111,12,4);
+    this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);
     const shockPow=isDown?0.12:(punchType?1:(hitFlash>0?.8:.32));
     this._shockAura(ctx,col,shockPow,walkT);
     if(this.downTimer>0){
@@ -384,6 +357,65 @@ class Fighter{
       ctx.globalAlpha=1;
     }
     ctx.globalAlpha=1;ctx.restore();
+  }
+  _drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur){
+    const punchExt=punchType==='punch'?Math.sin((1-punchTimer/punchDur)*Math.PI):0;
+    if(this.animal==='lion'){this._drawLion(ctx,col,wc,punchExt);return}
+    if(this.animal==='cat'){this._drawCat(ctx,col,wc,punchExt);return}
+    this._drawElephant(ctx,col,wc,punchExt);
+  }
+  _drawElephant(ctx,col,wc,punchExt){
+    ctx.fillStyle=col.shoe;
+    ctx.beginPath();ctx.ellipse(-14+wc*3,0,16,6,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(14-wc*3,0,16,6,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#8e939b';
+    this._r(ctx,-17,-54,14,54,4);this._r(ctx,3,-54,14,54,4);
+    this._r(ctx,-46,-98,92,62,14);
+    ctx.beginPath();ctx.ellipse(-20,-108,14,18,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(20,-108,14,18,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(0,-116,23,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#7f848c';ctx.beginPath();ctx.ellipse(0,-100,9,24,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#7f848c';ctx.lineWidth=9;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(10,-80);ctx.lineTo(20+punchExt*56,-88);ctx.stroke();
+    ctx.fillStyle=col.glove;ctx.beginPath();ctx.arc(20+punchExt*56,-88,11,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(8,-120,4.2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#111';ctx.beginPath();ctx.arc(9,-120,2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#f2f2f2';ctx.beginPath();ctx.arc(8,-98,2.5,0,Math.PI*2);ctx.fill();
+  }
+  _drawLion(ctx,col,wc,punchExt){
+    ctx.fillStyle=col.shoe;
+    ctx.beginPath();ctx.ellipse(-11+wc*4,0,13,5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(11-wc*4,0,13,5,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#c38a42';
+    this._r(ctx,-16,-50,12,50,4);this._r(ctx,4,-50,12,50,4);
+    this._r(ctx,-34,-92,68,50,10);
+    ctx.fillStyle='#8a5b24';ctx.beginPath();ctx.arc(0,-118,30,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#d8a055';ctx.beginPath();ctx.arc(0,-118,21,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(8,-122,4.2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#111';ctx.beginPath();ctx.arc(9,-122,2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#7a3c12';ctx.beginPath();ctx.arc(2,-110,3,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#111';ctx.lineWidth=2;ctx.beginPath();ctx.arc(1,-104,7,.2,Math.PI-.2);ctx.stroke();
+    ctx.fillStyle='#c38a42';this._r(ctx,10,-82,11,30,3);
+    ctx.fillStyle=col.glove;ctx.beginPath();ctx.arc(20+punchExt*54,-58,11,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#b67836';ctx.beginPath();ctx.moveTo(-30,-88);ctx.quadraticCurveTo(-48,-82,-52,-66);ctx.strokeStyle='#b67836';ctx.lineWidth=4;ctx.stroke();
+  }
+  _drawCat(ctx,col,wc,punchExt){
+    ctx.fillStyle=col.shoe;
+    ctx.beginPath();ctx.ellipse(-10+wc*4,0,12,5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(10-wc*4,0,12,5,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#9a9ea6';
+    this._r(ctx,-14,-46,11,46,4);this._r(ctx,3,-46,11,46,4);
+    this._r(ctx,-30,-86,60,44,10);
+    ctx.beginPath();ctx.arc(0,-112,20,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.moveTo(-13,-124);ctx.lineTo(-6,-141);ctx.lineTo(0,-122);ctx.fill();
+    ctx.beginPath();ctx.moveTo(13,-124);ctx.lineTo(6,-141);ctx.lineTo(0,-122);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(7,-116,3.8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#111';ctx.beginPath();ctx.arc(8,-116,1.9,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5a5f67';ctx.beginPath();ctx.arc(0,-108,2.8,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#5a5f67';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,-105);ctx.lineTo(0,-101);ctx.stroke();
+    ctx.fillStyle='#9a9ea6';this._r(ctx,9,-78,10,28,3);
+    ctx.fillStyle=col.glove;ctx.beginPath();ctx.arc(18+punchExt*50,-55,10.5,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#6f747c';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(-22,-82);ctx.quadraticCurveTo(-44,-72,-48,-48);ctx.stroke();
   }
   _shockAura(ctx,col,pow,phase){
     const t=performance.now()*.022+phase*6;
@@ -467,7 +499,8 @@ class Network{
     const v=s||{};
     return {
       left:!!v.left,right:!!v.right,up:!!v.up,down:!!v.down,
-      attackTick:v.attackTick|0,attackType:v.attackType==='kick'?'kick':'punch'
+      attackTick:v.attackTick|0,
+      animal:ANIMALS.includes(v.animal)?v.animal:'elephant'
     };
   }
   _ingestRemote(v){
@@ -499,7 +532,7 @@ class Network{
     if(out.right)flags|=2;
     if(out.up)flags|=4;
     if(out.down)flags|=8;
-    if(out.attackType==='kick')flags|=16;
+    flags|=(ANIMAL_BITS[out.animal]||0)<<4;
     const buf=new ArrayBuffer(3);
     const dv=new DataView(buf);
     dv.setUint8(0,flags);
@@ -514,7 +547,7 @@ class Network{
       right:!!(flags&2),
       up:!!(flags&4),
       down:!!(flags&8),
-      attackType:(flags&16)?'kick':'punch',
+      animal:ANIMALS[(flags>>4)&0x03]||'elephant',
       attackTick:dv.getUint16(1,true),
     };
   }
@@ -662,6 +695,7 @@ class Game{
     this.msg='';this.msgT=0;
     this.mode='online';
     this.myIdx=0;        // 0=RED, 1=BLUE (online only)
+    this.myAnimal='elephant';
     this.roomCode='';
     this._ls1={};this._ls2={}; // local input states (prev frame)
     this._btns=[];              // canvas clickable button rects
@@ -716,9 +750,11 @@ class Game{
         const ctrl=CTRL_ONLINE;
         const prev=this.myIdx===0?this._ls1:this._ls2;
         const localS=mkState(inp,ctrl,prev);
+        localS.animal=this.myAnimal;
         if(this.myIdx===0)this._ls1=localS;else this._ls2=localS;
         this.net.send(localS);
         this.fighters[this.myIdx].applyInput(localS);
+        if(this.net.remoteInputs.animal)this.fighters[1-this.myIdx].animal=this.net.remoteInputs.animal;
         this.fighters[1-this.myIdx].applyInput(this.net.remoteInputs);
       }
       this._separate();this._checkHits();
@@ -790,11 +826,11 @@ class Game{
     const[f1,f2]=this.fighters;
     const check=(att,def)=>{
       if(!att.punchType||!att.active||att.punchHit)return;
-      if(Math.abs(att.dz-def.dz)>MOVES[att.punchType].dzReach)return;
+      if(Math.abs(att.dz-def.dz)>MOVES.punch.dzReach)return;
       const pb=att.punchBox;
       if(pb&&rects(pb,def.hitbox)){
         if(def.receiveHit(att,this.audio)){
-          att.roundScore+=att.punchType==='kick'?2:1;att.punchHit=true;
+          att.roundScore+=1;att.punchHit=true;
           att.noHitStreak=0;
           def.noHitStreak++;
           if(def.noHitStreak>=KNOCKDOWN_HITS&&def.downTimer<=0){
@@ -804,7 +840,7 @@ class Game{
             this.audio.sfxBell();
             this.effects.push(new HitEffect(def.x,def.sy-118,'KNOCKOUT!', '#FFD700'));
           }
-          this.effects.push(new HitEffect(def.x,def.sy-85,att.punchType==='kick'?'KICK! 🦵':'POW! 👊',att.col.glove));
+          this.effects.push(new HitEffect(def.x,def.sy-85,'POW! 👊',att.col.glove));
         }
       }
     };
@@ -834,6 +870,18 @@ class Game{
         $(s).style.display=s===id?'':'none';
       });
     };
+    const setAnimal=a=>{
+      this.myAnimal=ANIMALS.includes(a)?a:'elephant';
+      ['elephant','lion','cat'].forEach(n=>{
+        const el=$('lb-an-'+n);
+        if(el)el.classList.toggle('sel',n===this.myAnimal);
+      });
+      this.fighters[this.myIdx].animal=this.myAnimal;
+    };
+    $('lb-an-elephant').onclick=()=>setAnimal('elephant');
+    $('lb-an-lion').onclick=()=>setAnimal('lion');
+    $('lb-an-cat').onclick=()=>setAnimal('cat');
+    setAnimal(this.myAnimal);
 
     // Back to title
     $('lb-back').onclick=()=>{document.getElementById('lobby').classList.remove('show')};
@@ -853,6 +901,7 @@ class Game{
         setTimeout(()=>{
           document.getElementById('lobby').classList.remove('show');
           this.mode='online';this.myIdx=0;
+          this.fighters[0].animal=this.myAnimal;
           this._newGame();
         },ONLINE_START_DELAY_MS);
       },err=>{alert('Error: '+err)});
@@ -875,6 +924,7 @@ class Game{
         setTimeout(()=>{
           document.getElementById('lobby').classList.remove('show');
           this.mode='online';this.myIdx=1;
+          this.fighters[1].animal=this.myAnimal;
           this._newGame();
         },ONLINE_START_DELAY_MS);
       },err=>{$('lb-err').textContent=err});
@@ -1050,7 +1100,7 @@ class Game{
     ctx.fillStyle='#4da3ff';ctx.font='bold 14px Arial Black,Arial';ctx.textAlign='center';
     ctx.fillText('BOTH PLAYERS CONTROLS',GW/2,202);
     ctx.fillStyle='#ddd';ctx.font='13px Arial';
-    ['Arrows  Move','SPACE  Attack','Punch = 1 pt   Kick = 2 pts'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*22));
+    ['Arrows  Move','SPACE  Punch','Punch = 1 pt'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*22));
 
     // Mode buttons
     this._btns=[];
@@ -1162,6 +1212,10 @@ if(ONLINE_ENABLED){
 </script>
 </body>
 </html>
+
+
+
+
 
 
 
