@@ -324,6 +324,15 @@ class AudioEngine{
   sfxKick(){if(!this.ac)return;const t=this.ac.currentTime;this._noise(350,.45,t,.07);const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(45,t+.13);g.gain.setValueAtTime(.75,t);g.gain.exponentialRampToValueAtTime(.0001,t+.15);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+.16)}
   sfxBlock(){if(!this.ac)return;this._noise(600,.28,this.ac.currentTime,.07)}
   sfxBell(){if(!this.ac)return;[880,1108,1320].forEach((hz,i)=>{const t=this.ac.currentTime+i*.022;const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.36/(i+1),t);g.gain.exponentialRampToValueAtTime(.0001,t+1.6);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+1.65)})}
+  sfxPowerup(){
+    if(!this.ac)return;const t=this.ac.currentTime;
+    [523,659,784,1047].forEach((hz,i)=>{
+      const o=this.ac.createOscillator(),g=this.ac.createGain();
+      o.type='sine';o.frequency.value=hz;
+      g.gain.setValueAtTime(.28,t+i*.07);g.gain.exponentialRampToValueAtTime(.0001,t+i*.07+.15);
+      o.connect(g);g.connect(this.ac.destination);o.start(t+i*.07);o.stop(t+i*.07+.16);
+    });
+  }
   sfxCombo(mega){
     if(!this.ac)return;const t=this.ac.currentTime;
     // Rising sweep
@@ -365,6 +374,7 @@ class Fighter{
     this.animal='elephant';
     this.comboCount=0;
     this.comboTimer=0;
+    this.speedBoost=0;
   }
   get sy(){const base=RG.fY+this.dz*(RG.nY-RG.fY);return this.jumpTimer>0?base-Math.sin(this.jumpTimer/36*Math.PI)*78*this.sc:base;}
   get groundY(){return RG.fY+this.dz*(RG.nY-RG.fY)}
@@ -396,8 +406,10 @@ class Fighter{
     this.kbx*=.72;this.kbz*=.72;
     this.blocking=false;
     const ast=ANIMAL_STATS[this.animal]||ANIMAL_STATS.elephant;
+    if(this.speedBoost>0)this.speedBoost--;
+    const spMul=this.speedBoost>0?1.7:1;
     let mvx=0,mvz=0;
-    if(s.left) mvx=-ast.speed;if(s.right)mvx=ast.speed;
+    if(s.left) mvx=-ast.speed*spMul;if(s.right)mvx=ast.speed*spMul;
     if(s.up)   mvz=-ast.zspeed;if(s.down) mvz=ast.zspeed;
     this.dz=Math.max(0, Math.min(1,    this.dz+mvz+this.kbz));
     const _margin=24,_lBound=lerp(RG.fL,RG.nL,this.dz)+_margin,_rBound=lerp(RG.fR,RG.nR,this.dz)-_margin;
@@ -459,6 +471,12 @@ class Fighter{
     }
     const wc=Math.sin(walkT);
     if(hitFlash>0&&Math.floor(hitFlash/2)%2===0)ctx.globalAlpha=.38;
+    if(this.speedBoost>0){
+      ctx.save();ctx.globalAlpha=0.28+0.18*Math.sin(this.speedBoost*.25);
+      ctx.strokeStyle='#FFD700';ctx.lineWidth=7;
+      ctx.beginPath();ctx.ellipse(0,-62,30,72,0,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }
     if(this.squatTimer>0){ctx.save();ctx.translate(0,26);ctx.scale(1,0.62);this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);ctx.restore();}
     else this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);
     if(this.downTimer>0){
@@ -934,6 +952,7 @@ class Game{
     this.net=new Network();
     this.effects=[];this.frame=0;
     this._shakeFrames=0;this._shakePow=0;
+    this._powerups=[];this._powerupTimer=0;
     this.state='title';this.round=1;
     this.timer=ROUND_SECS;this.cdTimer=0;
     this.msg='';this.msgT=0;
@@ -1048,6 +1067,31 @@ class Game{
         this._ls2=aiS;
         this.fighters[1].applyInput(aiS);
       }
+      // ── Power-up bananas ────────────────────────────────────────────────
+      if(this._powerupTimer>0)this._powerupTimer--;
+      else if(this._powerups.length<2){
+        const px=RG.nL+60+Math.random()*(RG.nR-RG.nL-120);
+        const pdz=0.2+Math.random()*0.6;
+        this._powerups.push({x:px,dz:pdz,fallY:-40,landed:false,pulse:0});
+        this._powerupTimer=400+Math.floor(Math.random()*200);
+      }
+      for(const pu of this._powerups){
+        if(!pu.landed){pu.fallY+=6;if(pu.fallY>=0)pu.landed=true;}
+        else{pu.pulse++;}
+      }
+      this._powerups=this._powerups.filter(pu=>{
+        const py=RG.fY+pu.dz*(RG.nY-RG.fY);
+        for(const f of this.fighters){
+          const fs=FAR_SC+f.dz*(NEAR_SC-FAR_SC);
+          if(pu.landed&&Math.abs(f.x-pu.x)<32*fs&&Math.abs(f.dz-pu.dz)<0.18){
+            f.speedBoost=300;
+            this.audio.sfxPowerup();
+            this.effects.push(new HitEffect(f.x,f.sy-80,'BANANA BOOST! 🍌','#FFD700'));
+            return false;
+          }
+        }
+        return pu.pulse<900; // despawn after 15s on ground
+      });
       this._separate();this._checkHits();
       this.effects=this.effects.filter(e=>{e.update();return e.alive});
       if(this.timer<=0){
@@ -1090,7 +1134,9 @@ class Game{
     f1.roundScore=0;f2.roundScore=0;
     f1.noHitStreak=0;f2.noHitStreak=0;
     f1.comboCount=0;f1.comboTimer=0;f2.comboCount=0;f2.comboTimer=0;
+    f1.speedBoost=0;f2.speedBoost=0;
     f1.downTimer=0;f2.downTimer=0;
+    this._powerups=[];this._powerupTimer=480;
     f1.punchType=null;f2.punchType=null;f1.blocking=false;f2.blocking=false;
     this._ls1={};this._ls2={};
     this.timer=ROUND_SECS;this.effects=[];
@@ -1318,6 +1364,21 @@ class Game{
     if(this.state!=='title'){
       const myF=this.fighters[this.myIdx];
       [...this.fighters].sort((a,b)=>a.dz-b.dz).forEach(f=>f.draw(ctx,f===myF));
+      // Draw power-up bananas
+      for(const pu of this._powerups){
+        const py=RG.fY+pu.dz*(RG.nY-RG.fY)+(pu.landed?0:pu.fallY);
+        const sc=FAR_SC+pu.dz*(NEAR_SC-FAR_SC);
+        const glow=pu.landed?(0.6+0.4*Math.sin(pu.pulse*.12)):0;
+        ctx.save();ctx.translate(pu.x,py);ctx.scale(sc*1.1,sc*1.1);
+        if(pu.landed){ctx.shadowColor='#FFD700';ctx.shadowBlur=12*glow;}
+        // Banana body
+        ctx.fillStyle='#FFD700';ctx.beginPath();
+        ctx.moveTo(0,-18);ctx.bezierCurveTo(14,-16,18,4,8,14);
+        ctx.bezierCurveTo(2,20,-6,18,-8,10);ctx.bezierCurveTo(-18,2,-12,-16,0,-18);
+        ctx.fill();
+        ctx.fillStyle='#cc9900';ctx.beginPath();ctx.arc(0,-18,3,0,Math.PI*2);ctx.fill();
+        ctx.shadowBlur=0;ctx.restore();
+      }
       this.effects.forEach(e=>e.draw(ctx));
       this._hud(ctx);
       // Online: show which fighter you are
