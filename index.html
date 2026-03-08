@@ -349,6 +349,16 @@ class AudioEngine{
       o.connect(g);g.connect(this.ac.destination);o.start(t+i*.02);o.stop(t+.56);
     });
   }
+  sfxTaunt(){
+    if(!this.ac)return;const t=this.ac.currentTime;
+    // Nyah-nyah ascending taunt
+    [330,392,330,440,330,392].forEach((hz,i)=>{
+      const o=this.ac.createOscillator(),g=this.ac.createGain();
+      o.type='triangle';o.frequency.value=hz;
+      g.gain.setValueAtTime(.18,t+i*.09);g.gain.exponentialRampToValueAtTime(.0001,t+i*.09+.08);
+      o.connect(g);g.connect(this.ac.destination);o.start(t+i*.09);o.stop(t+i*.09+.09);
+    });
+  }
   sfxPowerup(){
     if(!this.ac)return;const t=this.ac.currentTime;
     [523,659,784,1047].forEach((hz,i)=>{
@@ -372,7 +382,7 @@ class AudioEngine{
 class Input{
   constructor(){
     this.dn={};this.pr={};
-    document.addEventListener('keydown',e=>{if(!this.dn[e.code])this.pr[e.code]=true;this.dn[e.code]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault()});
+    document.addEventListener('keydown',e=>{if(!this.dn[e.code])this.pr[e.code]=true;this.dn[e.code]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();});
     document.addEventListener('keyup',e=>{this.dn[e.code]=false});
   }
   isDown(c){return!!this.dn[c]}
@@ -402,6 +412,7 @@ class Fighter{
     this.speedBoost=0;
     this.raging=false;
     this.missStreak=0;
+    this.taunting=0; // frames remaining of taunt animation
   }
   get sy(){const base=RG.fY+this.dz*(RG.nY-RG.fY);return this.jumpTimer>0?base-Math.sin(this.jumpTimer/36*Math.PI)*78*this.sc:base;}
   get groundY(){return RG.fY+this.dz*(RG.nY-RG.fY)}
@@ -519,6 +530,19 @@ class Fighter{
       ctx.globalAlpha=1;
     }
     ctx.globalAlpha=1;
+    if(this.taunting>0&&this.downTimer<=0){
+      // Raised gloves taunt — both arms up
+      const st=ANIMAL_STATS[this.animal]||ANIMAL_STATS.elephant;
+      const raise=Math.min(1,this.taunting/15);
+      ctx.save();
+      ctx.strokeStyle=col.skin;ctx.lineWidth=Math.round(st.gloveR*1.1);ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-st.gloveX,-70);ctx.lineTo(-st.gloveX-8,-90-raise*22);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(st.gloveX,-70);ctx.lineTo(st.gloveX+8,-90-raise*22);ctx.stroke();
+      ctx.fillStyle=col.glove;
+      ctx.beginPath();ctx.arc(-st.gloveX-8,-90-raise*22,st.gloveR,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(st.gloveX+8,-90-raise*22,st.gloveR,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
     if(isMe&&this.downTimer<=0){
       if(facing===-1)ctx.scale(-1,1); // undo facing flip so indicator never mirrors
       const ay=-162;
@@ -995,6 +1019,7 @@ class Game{
     this._ls1={};this._ls2={}; // local input states (prev frame)
     this._btns=[];              // canvas clickable button rects
     this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;
+    this._aiRageTimer=0;
     this.fighters=[
       new Fighter(220,.5,COL.p1),
       new Fighter(580,.5,COL.p2),
@@ -1100,9 +1125,12 @@ class Game{
           _upGrace:0,_downGrace:0,
         };
         if(this._aiPunchDelay>0)this._aiPunchDelay--;
-        if(Math.abs(dx)<90&&Math.abs(dz)<ast.dzReach&&this._aiPunchDelay<=0&&ai.cooldown<=0){
+        if(this._aiRageTimer>0)this._aiRageTimer--;
+        const aiRaging=this._aiRageTimer>0;
+        const aiRange=aiRaging?120:90, aiRandDelay=aiRaging?4:18;
+        if(Math.abs(dx)<aiRange&&Math.abs(dz)<ast.dzReach&&this._aiPunchDelay<=0&&ai.cooldown<=0){
           this._aiAttackTick++;aiS.attackTick=this._aiAttackTick;
-          this._aiPunchDelay=ast.punchDur+ast.cooldown+Math.floor(Math.random()*18);
+          this._aiPunchDelay=ast.punchDur+ast.cooldown+Math.floor(Math.random()*aiRandDelay);
         }
         this._ls2=aiS;
         this.fighters[1].applyInput(aiS);
@@ -1132,6 +1160,19 @@ class Game{
         }
         return pu.pulse<900; // despawn after 15s on ground
       });
+      // ── Taunt (T key) ───────────────────────────────────────────────────
+      if(inp.was('KeyT')&&this.state==='fight'){
+        const myF=this.fighters[this.myIdx];
+        if(myF.taunting<=0&&myF.downTimer<=0){
+          myF.taunting=60;
+          this.audio.sfxTaunt();
+          const TAUNTS=['COME ON! 👊','IS THAT ALL? 😏','TOO EASY! 😎',"YOU CAN'T HIT ME! 😂",'BRING IT! 🔥'];
+          this.effects.push(new HitEffect(myF.x,myF.sy-130,TAUNTS[Math.floor(Math.random()*TAUNTS.length)],'#ffffff'));
+          // Make AI aggressive for 5 seconds
+          if(this.mode==='ai')this._aiRageTimer=300;
+        }
+      }
+      for(const tf of this.fighters)if(tf.taunting>0)tf.taunting--;
       // ── Miss streak boo ─────────────────────────────────────────────────
       for(const mf of this.fighters){
         if(mf.missStreak===3){this.audio.sfxCrowdBoo();this.effects.push(new HitEffect(mf.x,mf.sy-105,'MISS! 😂','#888888'));}
