@@ -1656,12 +1656,28 @@ class Game{
         const glow=pu.landed?(0.6+0.4*Math.sin(pu.pulse*.12)):0;
         ctx.save();ctx.translate(pu.x,py);ctx.scale(sc*1.1,sc*1.1);
         if(pu.landed){ctx.shadowColor='#FFD700';ctx.shadowBlur=12*glow;}
-        // Banana body
-        ctx.fillStyle='#FFD700';ctx.beginPath();
-        ctx.moveTo(0,-18);ctx.bezierCurveTo(14,-16,18,4,8,14);
-        ctx.bezierCurveTo(2,20,-6,18,-8,10);ctx.bezierCurveTo(-18,2,-12,-16,0,-18);
-        ctx.fill();
-        ctx.fillStyle='#cc9900';ctx.beginPath();ctx.arc(0,-18,3,0,Math.PI*2);ctx.fill();
+        // Single banana — curved crescent shape
+        ctx.save();ctx.rotate(-0.3);
+        // Outer curve (back of banana)
+        ctx.beginPath();
+        ctx.moveTo(-4,-22);
+        ctx.bezierCurveTo(18,-20, 26,4, 14,20);
+        ctx.bezierCurveTo(10,26, 4,24, 2,18);
+        ctx.bezierCurveTo(12,6, 6,-12, -4,-22);
+        ctx.closePath();
+        ctx.fillStyle='#FFE033';ctx.fill();
+        // Inner highlight stripe
+        ctx.beginPath();
+        ctx.moveTo(-1,-16);
+        ctx.bezierCurveTo(14,-14, 20,4, 10,17);
+        ctx.bezierCurveTo(8,14, 14,2, 2,-14);
+        ctx.closePath();
+        ctx.fillStyle='#FFF176';ctx.fill();
+        // Tip nubs
+        ctx.fillStyle='#8B6200';
+        ctx.beginPath();ctx.ellipse(-4,-22,3,4,0.4,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.ellipse(14,20,2.5,3.5,-0.3,0,Math.PI*2);ctx.fill();
+        ctx.restore();
         ctx.shadowBlur=0;ctx.restore();
       }
       this.effects.forEach(e=>e.draw(ctx));
@@ -1885,35 +1901,35 @@ class Game{
     // ── Place spectators around the ring ─────────────────────────────────────
     // Far crowd row (behind far ropes)
     [
-      [drawMonkey, 172, fY-30, 0.55, 0.0],
-      [drawParrot, 222, fY-34, 0.60, 1.1],
-      [drawTiger,  275, fY-28, 0.50, 2.2],
-      [drawHippo,  332, fY-24, 0.45, 3.3],
-      [drawZebra,  388, fY-28, 0.48, 0.8],
-      [drawSnake,  440, fY-36, 0.55, 1.9],
-      [drawMonkey, 494, fY-30, 0.52, 3.0],
-      [drawParrot, 546, fY-34, 0.58, 2.5],
-      [drawTiger,  596, fY-26, 0.48, 1.4],
-      [drawHippo,  642, fY-22, 0.44, 0.6],
+      [drawMonkey, 172, fY-30, 0.82, 0.0],
+      [drawParrot, 222, fY-34, 0.88, 1.1],
+      [drawTiger,  275, fY-28, 0.76, 2.2],
+      [drawHippo,  332, fY-24, 0.70, 3.3],
+      [drawZebra,  388, fY-28, 0.74, 0.8],
+      [drawSnake,  440, fY-36, 0.82, 1.9],
+      [drawMonkey, 494, fY-30, 0.78, 3.0],
+      [drawParrot, 546, fY-34, 0.86, 2.5],
+      [drawTiger,  596, fY-26, 0.74, 1.4],
+      [drawHippo,  642, fY-22, 0.68, 0.6],
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
     // Left side — clipped to outside-ring area so animals don't bleed onto the mat
     ctx.save();
     ctx.beginPath();ctx.rect(0,0,nL+4,nY+4);ctx.clip();
     [
-      [drawFlamingo, 18,  nY-48, 0.72, 0.5],
-      [drawMonkey,   38,  nY-40, 0.78, 2.1],
-      [drawSnake,    14,  nY-82, 0.60, 3.5],
-      [drawZebra,    36,  nY-74, 0.60, 0.3],
+      [drawFlamingo, 18,  nY-55, 1.05, 0.5],
+      [drawMonkey,   44,  nY-46, 1.12, 2.1],
+      [drawSnake,    12,  nY-96, 0.90, 3.5],
+      [drawZebra,    40,  nY-86, 0.90, 0.3],
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
     ctx.restore();
     // Right side — clipped to outside-ring area
     ctx.save();
     ctx.beginPath();ctx.rect(nR-4,0,GW-(nR-4),nY+4);ctx.clip();
     [
-      [drawMonkey,   GW-38, nY-40, 0.78, 3.2],
-      [drawFlamingo, GW-18, nY-48, 0.72, 1.8],
-      [drawTiger,    GW-38, nY-74, 0.62, 2.7],
-      [drawParrot,   GW-16, nY-82, 0.65, 0.9],
+      [drawMonkey,   GW-44, nY-46, 1.12, 3.2],
+      [drawFlamingo, GW-18, nY-55, 1.05, 1.8],
+      [drawTiger,    GW-42, nY-86, 0.92, 2.7],
+      [drawParrot,   GW-14, nY-96, 0.95, 0.9],
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
     ctx.restore();
 
