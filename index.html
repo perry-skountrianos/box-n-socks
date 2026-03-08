@@ -50,6 +50,12 @@
     #lb-err{color:#ff6666;font-size:13px;min-height:18px;font-weight:normal;margin:4px 0}
     #lb-connected{color:#88ff88;font-size:15px;font-weight:normal}
     .sep{width:1px;height:40px;background:rgba(255,255,255,0.15);margin:0 8px}
+    .stats-table{border-collapse:collapse;margin:12px auto 4px;font-size:11px;font-weight:normal;font-family:Arial,sans-serif}
+    .stats-table th{color:#FFD700;padding:4px 10px;text-align:center;border-bottom:1px solid #3b3e66;letter-spacing:.5px;font-size:10px}
+    .stats-table td{color:#bfc6ff;padding:3px 10px;text-align:center;border-bottom:1px solid #1e1e33}
+    .stats-table td:first-child{text-align:left;color:#fff;font-weight:bold;padding-left:6px}
+    .stats-table tr:hover td{background:rgba(255,255,255,0.05)}
+    .stats-label{color:#666;font-size:10px;margin-bottom:2px;font-weight:normal;font-family:Arial,sans-serif}
   </style>
 </head>
 <body style="margin:0;padding:0;background:#0d0d1a;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden">
@@ -57,6 +63,34 @@
 
 <!-- ── Lobby HTML overlay ──────────────────────────────────────────────────── -->
 <div id="lobby">
+  <!-- VS Computer screen -->
+  <div id="ls-ai" class="ls" style="display:none">
+    <h2>🤖 VS COMPUTER</h2>
+    <p style="margin-bottom:6px">Choose your animal:</p>
+    <div class="animal-row">
+      <button class="animal-btn sel" id="lb-ai-an-elephant">ELEPHANT</button>
+      <button class="animal-btn" id="lb-ai-an-lion">LION</button>
+      <button class="animal-btn" id="lb-ai-an-cat">CAT</button>
+      <button class="animal-btn" id="lb-ai-an-gorilla">GORILLA</button>
+      <button class="animal-btn" id="lb-ai-an-rabbit">RABBIT</button>
+      <button class="animal-btn" id="lb-ai-an-crocodile">CROC</button>
+    </div>
+    <p class="stats-label">ANIMAL STATS</p>
+    <table class="stats-table">
+      <thead><tr><th>ANIMAL</th><th>SPEED</th><th>PTS/PUNCH</th><th>REACH</th><th>KNOCKBACK</th><th>HITBOX</th></tr></thead>
+      <tbody>
+        <tr><td>🐘 Elephant</td><td>★★☆☆</td><td>2</td><td>★★★☆</td><td>★★★☆</td><td>Medium</td></tr>
+        <tr><td>🦁 Lion</td><td>★★★☆</td><td>1</td><td>★★★☆</td><td>★★☆☆</td><td>Medium</td></tr>
+        <tr><td>🐱 Cat</td><td>★★★★</td><td>1</td><td>★★☆☆</td><td>★☆☆☆</td><td>Medium</td></tr>
+        <tr><td>🦍 Gorilla</td><td>★☆☆☆</td><td>2.5</td><td>★★★★</td><td>★★★★</td><td>Large</td></tr>
+        <tr><td>🐰 Rabbit</td><td>★★★★</td><td>1</td><td>★★☆☆</td><td>★☆☆☆</td><td>Tiny</td></tr>
+        <tr><td>🐊 Croc</td><td>★★★☆</td><td>1</td><td>★★★★</td><td>★★☆☆</td><td>Medium</td></tr>
+      </tbody>
+    </table>
+    <button id="lb-ai-start">⚔️  LET'S FIGHT!</button>
+    <button class="lb-link" id="lb-ai-back">← Back</button>
+  </div>
+
   <!-- Screen 1: choose HOST or JOIN -->
   <div id="ls-main" class="ls">
     <h2>🌐 ONLINE PLAY</h2>
@@ -145,19 +179,33 @@ const ANIMALS=['elephant','lion','cat','gorilla','rabbit','crocodile'];
 const ANIMAL_BITS={elephant:0,lion:1,cat:2,gorilla:3,rabbit:4,crocodile:5};
 const CTRL_ONLINE={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',attack:'Space'};
 const MOVES={punch:{dur:18,dzReach:0.32}};
+// hitScore  = points awarded per landed punch
+// hitboxW/H = defender hitbox half-width / height (smaller = harder to hit)
 const ANIMAL_STATS={
+  // Unique edge: every punch scores DOUBLE — slow but devastating
   elephant: {speed:3.2,zspeed:0.022,punchDur:22,cooldown:16,dzReach:0.36,
-             gloveX:20,gloveXExt:56,gloveY:-88,gloveR:11, kbx:9,  kbz:0.07,knockdownHits:12},
-  lion:     {speed:3.8,zspeed:0.026,punchDur:18,cooldown:12,dzReach:0.32,
-             gloveX:20,gloveXExt:54,gloveY:-58,gloveR:11, kbx:6,  kbz:0.05,knockdownHits:10},
-  cat:      {speed:4.8,zspeed:0.032,punchDur:13,cooldown:8, dzReach:0.28,
-             gloveX:18,gloveXExt:50,gloveY:-55,gloveR:10.5,kbx:3.5,kbz:0.03,knockdownHits:7},
+             gloveX:20,gloveXExt:56,gloveY:-88,gloveR:11, kbx:9,  kbz:0.07,knockdownHits:12,
+             hitScore:2, hitboxW:26,hitboxH:128},
+  // Unique edge: perfectly balanced — fastest cooldown recovery of all
+  lion:     {speed:3.8,zspeed:0.026,punchDur:18,cooldown:9, dzReach:0.32,
+             gloveX:20,gloveXExt:54,gloveY:-58,gloveR:11, kbx:6,  kbz:0.05,knockdownHits:10,
+             hitScore:1, hitboxW:26,hitboxH:128},
+  // Unique edge: fastest punch chain (low cooldown + fast duration)
+  cat:      {speed:4.2,zspeed:0.030,punchDur:13,cooldown:7, dzReach:0.28,
+             gloveX:18,gloveXExt:50,gloveY:-55,gloveR:10.5,kbx:3.5,kbz:0.03,knockdownHits:7,
+             hitScore:1, hitboxW:24,hitboxH:118},
+  // Unique edge: every punch scores 2.5x — biggest target but unstoppable
   gorilla:  {speed:2.6,zspeed:0.018,punchDur:25,cooldown:20,dzReach:0.38,
-             gloveX:22,gloveXExt:60,gloveY:-64,gloveR:13, kbx:12, kbz:0.09,knockdownHits:14},
-  rabbit:   {speed:5.5,zspeed:0.038,punchDur:11,cooldown:6, dzReach:0.25,
-             gloveX:16,gloveXExt:46,gloveY:-52,gloveR:10, kbx:2.5,kbz:0.02,knockdownHits:6},
-  crocodile:{speed:3.5,zspeed:0.024,punchDur:17,cooldown:13,dzReach:0.44,
-             gloveX:20,gloveXExt:66,gloveY:-58,gloveR:11, kbx:7,  kbz:0.05,knockdownHits:10},
+             gloveX:22,gloveXExt:60,gloveY:-64,gloveR:13, kbx:12, kbz:0.09,knockdownHits:14,
+             hitScore:2.5,hitboxW:32,hitboxH:136},
+  // Unique edge: tiny hitbox — very hard to hit, but light punches
+  rabbit:   {speed:4.0,zspeed:0.026,punchDur:15,cooldown:10,dzReach:0.25,
+             gloveX:16,gloveXExt:46,gloveY:-52,gloveR:10, kbx:2.5,kbz:0.02,knockdownHits:6,
+             hitScore:1, hitboxW:16,hitboxH:92},
+  // Unique edge: extreme punch reach — hits from far across the ring
+  crocodile:{speed:3.5,zspeed:0.024,punchDur:17,cooldown:13,dzReach:0.48,
+             gloveX:20,gloveXExt:66,gloveY:-58,gloveR:11, kbx:7,  kbz:0.05,knockdownHits:10,
+             hitScore:1, hitboxW:26,hitboxH:128},
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -172,12 +220,23 @@ function rrect(ctx,x,y,w,h,r){
   ctx.closePath();ctx.fill();
 }
 // Convert keyboard state to logical input state (attackTick is monotonic).
+// Double-tap ↑ = jump, double-tap ↓ = squat (grace window of 15 frames).
 function mkState(inp,ctrl,prev){
   const attackPressed=inp.was(ctrl.attack);
+  const upPressed=inp.was(ctrl.up), downPressed=inp.was(ctrl.down);
+  const upGrace  =Math.max(0,(prev._upGrace  ||0)-1);
+  const downGrace=Math.max(0,(prev._downGrace||0)-1);
+  let jumpTick =(prev.jumpTick ||0);
+  let squatTick=(prev.squatTick||0);
+  if(upPressed)  {if(upGrace  >0)jumpTick++; }
+  if(downPressed){if(downGrace>0)squatTick++;}
   return{
     left: inp.isDown(ctrl.left), right:inp.isDown(ctrl.right),
     up:   inp.isDown(ctrl.up),   down: inp.isDown(ctrl.down),
     attackTick:(prev.attackTick||0)+(attackPressed?1:0),
+    jumpTick, squatTick,
+    _upGrace:  upPressed  ?15:upGrace,
+    _downGrace:downPressed?15:downGrace,
     animal:(prev.animal&&ANIMAL_BITS[prev.animal]!==undefined)?prev.animal:'elephant',
   };
 }
@@ -289,13 +348,16 @@ class Fighter{
     this.punchType=null;this.punchTimer=0;this.punchDur=0;this.punchHit=false;
     this.hitFlash=0;this.cooldown=0;this.walkT=0;
     this._at=0; // attack tick tracker
+    this._jt=0;this._st=0; // jump/squat tick trackers
+    this.jumpTimer=0;this.squatTimer=0;
     this.noHitStreak=0;
     this.downTimer=0;
     this.animal='elephant';
   }
-  get sy(){return RG.fY+this.dz*(RG.nY-RG.fY)}
+  get sy(){const base=RG.fY+this.dz*(RG.nY-RG.fY);return this.jumpTimer>0?base-Math.sin(this.jumpTimer/36*Math.PI)*78*this.sc:base;}
+  get groundY(){return RG.fY+this.dz*(RG.nY-RG.fY)}
   get sc(){return FAR_SC+this.dz*(NEAR_SC-FAR_SC)}
-  get hitbox(){const s=this.sc;return{x:this.x-26*s,y:this.sy-128*s,w:52*s,h:128*s}}
+  get hitbox(){const s=this.sc,st=ANIMAL_STATS[this.animal]||ANIMAL_STATS.elephant;const hh=st.hitboxH*(this.squatTimer>0?0.52:1);return{x:this.x-st.hitboxW*s,y:this.sy-hh*s,w:st.hitboxW*2*s,h:hh*s}}
   get punchBox(){
     if(!this.active)return null;
     const ext=Math.sin((1-this.punchTimer/this.punchDur)*Math.PI),s=this.sc;
@@ -329,7 +391,7 @@ class Fighter{
     const _margin=24,_lBound=lerp(RG.fL,RG.nL,this.dz)+_margin,_rBound=lerp(RG.fR,RG.nR,this.dz)-_margin;
     this.x =Math.max(_lBound,Math.min(_rBound,this.x +mvx+this.kbx));
     if((mvx||mvz)&&!this.punchType)this.walkT+=.13;else this.walkT*=.72;
-    if(!this.punchType&&this.cooldown<=0){
+    if(!this.punchType&&this.cooldown<=0&&this.squatTimer<=0){
       const at=s.attackTick||0;
       if(at>this._at){
         this._at=at;
@@ -341,10 +403,17 @@ class Fighter{
     if(this.punchType){this.punchTimer--;if(this.punchTimer<=0){this.punchType=null;this.cooldown=ast.cooldown}}
     if(this.cooldown>0)this.cooldown--;
     if(this.hitFlash>0)this.hitFlash--;
+    const jt=s.jumpTick||0;
+    if(jt>this._jt){this._jt=jt;if(this.jumpTimer<=0&&this.squatTimer<=0)this.jumpTimer=36;}
+    if(this.jumpTimer>0)this.jumpTimer--;
+    const st2=s.squatTick||0;
+    if(st2>this._st){this._st=st2;if(this.squatTimer<=0&&this.jumpTimer<=0)this.squatTimer=28;}
+    if(this.squatTimer>0)this.squatTimer--;
   }
 
   receiveHit(att,audio){
     if(this.downTimer>0)return false;
+    if(this.squatTimer>0)return false;
     this.hitFlash=15;
     const dir=this.x!==att.x?Math.sign(this.x-att.x):att.facing;
     const ddir=this.dz!==att.dz?Math.sign(this.dz-att.dz):0;
@@ -357,6 +426,14 @@ class Fighter{
 
   draw(ctx,isMe=false){
     const{x,sy,sc,facing,col,punchType,punchTimer,punchDur,hitFlash,blocking,walkT}=this;
+    // Shadow at ground level (shrinks when jumping)
+    const gY=this.groundY;
+    const shSc=this.jumpTimer>0?Math.max(0.3,1-Math.sin(this.jumpTimer/36*Math.PI)*0.7):1;
+    ctx.save();ctx.translate(x,gY);ctx.scale(sc,sc);if(facing===-1)ctx.scale(-1,1);
+    ctx.globalAlpha=0.22*shSc;ctx.fillStyle='rgba(0,0,0,1)';
+    ctx.beginPath();ctx.ellipse(0,2,24*shSc,7*shSc,0,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=1;ctx.restore();
+
     ctx.save();ctx.translate(x,sy);ctx.scale(sc,sc);
     if(facing===-1)ctx.scale(-1,1);
     const isDown=this.downTimer>0;
@@ -369,9 +446,8 @@ class Fighter{
     }
     const wc=Math.sin(walkT);
     if(hitFlash>0&&Math.floor(hitFlash/2)%2===0)ctx.globalAlpha=.38;
-    // Shadow
-    ctx.fillStyle='rgba(0,0,0,0.22)';ctx.beginPath();ctx.ellipse(0,2,24,7,0,0,Math.PI*2);ctx.fill();
-    this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);
+    if(this.squatTimer>0){ctx.save();ctx.translate(0,26);ctx.scale(1,0.62);this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);ctx.restore();}
+    else this._drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur);
     if(this.downTimer>0){
       if(facing===-1)ctx.scale(-1,1); // undo facing flip so label never mirrors
       const secs=Math.ceil(this.downTimer/60);
@@ -672,10 +748,12 @@ class Network{
     if(out.up)flags|=4;
     if(out.down)flags|=8;
     flags|=(ANIMAL_BITS[out.animal]||0)<<4;
-    const buf=new ArrayBuffer(3);
+    const buf=new ArrayBuffer(5);
     const dv=new DataView(buf);
     dv.setUint8(0,flags);
     dv.setUint16(1,out.attackTick&0xffff,true);
+    dv.setUint8(3,(out.jumpTick||0)&0xff);
+    dv.setUint8(4,(out.squatTick||0)&0xff);
     return buf;
   }
   _unpackState(buf){
@@ -688,6 +766,8 @@ class Network{
       down:!!(flags&8),
       animal:ANIMALS[(flags>>4)&0x07]||'elephant',
       attackTick:dv.getUint16(1,true),
+      jumpTick:buf.byteLength>=4?dv.getUint8(3):0,
+      squatTick:buf.byteLength>=5?dv.getUint8(4):0,
     };
   }
   _ingestMessage(data){
@@ -832,12 +912,13 @@ class Game{
     this.state='title';this.round=1;
     this.timer=ROUND_SECS;this.cdTimer=0;
     this.msg='';this.msgT=0;
-    this.mode='online';
-    this.myIdx=0;        // 0=RED, 1=BLUE (online only)
+    this.mode='ai';
+    this.myIdx=0;
     this.myAnimal='elephant';
     this.roomCode='';
     this._ls1={};this._ls2={}; // local input states (prev frame)
     this._btns=[];              // canvas clickable button rects
+    this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;
     this.fighters=[
       new Fighter(220,.5,COL.p1),
       new Fighter(580,.5,COL.p2),
@@ -873,7 +954,7 @@ class Game{
     const inp=this.inp;
 
     if(this.state==='title'){
-      if(inp.was('Space')||inp.was('Enter'))this._showLobby();
+      if(inp.was('Space')||inp.was('Enter'))this._showLobbyAI();
     }
     else if(this.state==='cd'){
       this.cdTimer--;
@@ -895,6 +976,31 @@ class Game{
         this.fighters[this.myIdx].applyInput(localS);
         if(this.net.remoteInputs.animal)this.fighters[1-this.myIdx].animal=this.net.remoteInputs.animal;
         this.fighters[1-this.myIdx].applyInput(this.net.remoteInputs);
+      }else if(this.mode==='ai'){
+        const localS=mkState(inp,CTRL_ONLINE,this._ls1||{});
+        localS.animal=this.myAnimal;
+        this._ls1=localS;
+        this.fighters[0].applyInput(localS);
+        // AI input
+        const ai=this.fighters[1],pl=this.fighters[0];
+        const dx=pl.x-ai.x, dz=pl.dz-ai.dz;
+        const ast=ANIMAL_STATS[ai.animal]||ANIMAL_STATS.elephant;
+        const aiS={
+          left:dx<-18,right:dx>18,
+          up:dz<-0.04,down:dz>0.04,
+          attackTick:this._aiAttackTick,
+          jumpTick:this._aiJumpTick,
+          squatTick:this._aiSquatTick,
+          animal:ai.animal,
+          _upGrace:0,_downGrace:0,
+        };
+        if(this._aiPunchDelay>0)this._aiPunchDelay--;
+        if(Math.abs(dx)<90&&Math.abs(dz)<ast.dzReach&&this._aiPunchDelay<=0&&ai.cooldown<=0){
+          this._aiAttackTick++;aiS.attackTick=this._aiAttackTick;
+          this._aiPunchDelay=ast.punchDur+ast.cooldown+Math.floor(Math.random()*18);
+        }
+        this._ls2=aiS;
+        this.fighters[1].applyInput(aiS);
       }
       this._separate();this._checkHits();
       this.effects=this.effects.filter(e=>{e.update();return e.alive});
@@ -921,8 +1027,8 @@ class Game{
 
   _startRound(){
     const[f1,f2]=this.fighters;
-    f1.x=220;f1.dz=.5;f1.kbx=0;f1.kbz=0;f1._at=0;
-    f2.x=580;f2.dz=.5;f2.kbx=0;f2.kbz=0;f2._at=0;
+    f1.x=220;f1.dz=.5;f1.kbx=0;f1.kbz=0;f1._at=0;f1._jt=0;f1._st=0;f1.jumpTimer=0;f1.squatTimer=0;
+    f2.x=580;f2.dz=.5;f2.kbx=0;f2.kbz=0;f2._at=0;f2._jt=0;f2._st=0;f2.jumpTimer=0;f2.squatTimer=0;
     f1.roundScore=0;f2.roundScore=0;
     f1.noHitStreak=0;f2.noHitStreak=0;
     f1.downTimer=0;f2.downTimer=0;
@@ -938,8 +1044,9 @@ class Game{
     this.state='roundEnd';this.audio.stop();this.audio.sfxBell();
     const[f1,f2]=this.fighters;
     f1.totalScore+=f1.roundScore;f2.totalScore+=f2.roundScore;
-    if(f1.roundScore>f2.roundScore){f1.roundsWon++;this.msg=`RED wins round ${this.round}!`}
-    else if(f2.roundScore>f1.roundScore){f2.roundsWon++;this.msg=`BLUE wins round ${this.round}!`}
+    const isAI=this.mode==='ai';
+    if(f1.roundScore>f2.roundScore){f1.roundsWon++;this.msg=isAI?`You win round ${this.round}!`:`RED wins round ${this.round}!`}
+    else if(f2.roundScore>f1.roundScore){f2.roundsWon++;this.msg=isAI?'CPU wins round!!!':`BLUE wins round ${this.round}!`}
     else{this.msg=`Round ${this.round} — DRAW!`}
     this.msgT=this.round<TOTAL_ROUNDS?190:90;
   }
@@ -974,7 +1081,8 @@ class Game{
       const pb=att.punchBox;
       if(pb&&rects(pb,def.hitbox)){
         if(def.receiveHit(att,this.audio)){
-          att.roundScore+=1;att.punchHit=true;
+          const pts=ANIMAL_STATS[att.animal]?.hitScore||1;
+          att.roundScore+=pts;att.punchHit=true;
           att.noHitStreak=0;
           def.noHitStreak++;
           if(def.noHitStreak>=defSt.knockdownHits&&def.downTimer<=0){
@@ -1002,6 +1110,7 @@ class Game{
     for(const b of this._btns){
       if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){
         if(b.id==='online'){this._showLobby()}
+        else if(b.id==='vsai'){this._showLobbyAI()}
         break;
       }
     }
@@ -1010,10 +1119,9 @@ class Game{
   // ── Lobby UI ──────────────────────────────────────────────────────────────
   _initLobbyUI(){
     const $ = id=>document.getElementById(id);
+    const allScreens=['ls-ai','ls-main','ls-host','ls-join','ls-conn'];
     const showScreen=id=>{
-      ['ls-main','ls-host','ls-join','ls-conn'].forEach(s=>{
-        $(s).style.display=s===id?'':'none';
-      });
+      allScreens.forEach(s=>{$(s).style.display=s===id?'':'none'});
     };
     const setAnimal=a=>{
       this.myAnimal=ANIMALS.includes(a)?a:'elephant';
@@ -1024,7 +1132,30 @@ class Game{
       this.fighters[this.myIdx].animal=this.myAnimal;
     };
     ANIMALS.forEach(n=>{const el=$('lb-an-'+n);if(el)el.onclick=()=>setAnimal(n);});
+    // AI screen animal buttons
+    const setAIAnimal=a=>{
+      this.myAnimal=ANIMALS.includes(a)?a:'elephant';
+      ANIMALS.forEach(n=>{
+        const el=$('lb-ai-an-'+n);
+        if(el)el.classList.toggle('sel',n===this.myAnimal);
+      });
+      this.fighters[0].animal=this.myAnimal;
+    };
+    ANIMALS.forEach(n=>{const el=$('lb-ai-an-'+n);if(el)el.onclick=()=>setAIAnimal(n);});
     setAnimal(this.myAnimal);
+    // AI start & back
+    const aiStart=$('lb-ai-start');
+    if(aiStart)aiStart.onclick=()=>{
+      document.getElementById('lobby').classList.remove('show');
+      this.myIdx=0;
+      this.mode='ai';
+      this.fighters[0].animal=this.myAnimal;
+      this.fighters[1].animal=ANIMALS[Math.floor(Math.random()*ANIMALS.length)];
+      this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;
+      this._newGame();
+    };
+    const aiBack=$('lb-ai-back');
+    if(aiBack)aiBack.onclick=()=>{document.getElementById('lobby').classList.remove('show')};
 
     // Back to title
     $('lb-back').onclick=()=>{document.getElementById('lobby').classList.remove('show')};
@@ -1081,8 +1212,15 @@ class Game{
 
   _showLobby(){
     const $=id=>document.getElementById(id);
-    ['ls-main','ls-host','ls-join','ls-conn'].forEach(s=>{
+    ['ls-ai','ls-main','ls-host','ls-join','ls-conn'].forEach(s=>{
       $(s).style.display=s==='ls-main'?'':'none';
+    });
+    document.getElementById('lobby').classList.add('show');
+  }
+  _showLobbyAI(){
+    const $=id=>document.getElementById(id);
+    ['ls-ai','ls-main','ls-host','ls-join','ls-conn'].forEach(s=>{
+      $(s).style.display=s==='ls-ai'?'':'none';
     });
     document.getElementById('lobby').classList.add('show');
   }
@@ -1195,8 +1333,9 @@ class Game{
 
   _hud(ctx){
     const[f1,f2]=this.fighters;
-    this._scoreBox(ctx,14,10,f1.roundScore,f1.totalScore,'RED', COL.p1.shorts,false);
-    this._scoreBox(ctx,GW-14,10,f2.roundScore,f2.totalScore,'BLUE',COL.p2.shorts,true);
+    const isAI=this.mode==='ai';
+    this._scoreBox(ctx,14,10,f1.roundScore,f1.totalScore,isAI?'YOU':'RED', COL.p1.shorts,false);
+    this._scoreBox(ctx,GW-14,10,f2.roundScore,f2.totalScore,isAI?'CPU':'BLUE',COL.p2.shorts,true);
     const secs=Math.ceil(this.timer),fl=this.state==='fight'&&secs<=10&&Math.floor(this.frame/15)%2===0;
     const card=ctx.createLinearGradient(0,8,0,56);
     if(fl){
@@ -1237,14 +1376,14 @@ class Game{
     ctx.fillStyle='#cc0000';ctx.fillText('BOX',GW/2-88,108);
     ctx.fillStyle='#0044ee';ctx.fillText('N',GW/2+12,108);
     ctx.fillStyle='#FFD700';ctx.fillText('SOCKS!',GW/2+132,142);
-    ctx.fillStyle='#ccc';ctx.font='bold 15px Arial';ctx.fillText('Online Multiplayer',GW/2,168);
+    ctx.fillStyle='#ccc';ctx.font='bold 15px Arial';ctx.fillText('VS Computer & Online Multiplayer',GW/2,168);
 
-    // Controls (shared for both players)
-    ctx.fillStyle='#00339933';rrect(ctx,GW/2-150,182,300,102,10);
+    // Controls box
+    ctx.fillStyle='#00339933';rrect(ctx,GW/2-160,182,320,112,10);
     ctx.fillStyle='#4da3ff';ctx.font='bold 14px Arial Black,Arial';ctx.textAlign='center';
-    ctx.fillText('BOTH PLAYERS CONTROLS',GW/2,202);
+    ctx.fillText('CONTROLS',GW/2,203);
     ctx.fillStyle='#ddd';ctx.font='13px Arial';
-    ['Arrows  Move','SPACE  Punch','Punch = 1 pt'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*22));
+    ['Arrows — Move','SPACE — Punch','Double-tap ↑ — Jump','Double-tap ↓ — Duck (dodges punches)'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*20));
 
     // Mode buttons
     this._btns=[];
@@ -1254,30 +1393,30 @@ class Game{
       ctx.fillText(label,x+w/2,y+h/2+6);
       this._btns.push({x,y,w,h,id});
     };
+    drawBtn(GW/2-100,310,190,46,'🤖  VS COMPUTER','#885500','vsai');
     if(ONLINE_ENABLED){
-      drawBtn(GW/2-90,310,180,48,'🌐  ONLINE PLAY','#003399','online');
+      drawBtn(GW/2-100,366,190,46,'🌐  ONLINE PLAY','#003399','online');
     }else{
-      ctx.fillStyle='rgba(255,255,255,0.18)';rrect(ctx,GW/2-90,310,180,48,10);
+      ctx.fillStyle='rgba(255,255,255,0.18)';rrect(ctx,GW/2-100,366,190,46,10);
       ctx.fillStyle='#555';ctx.font='bold 13px Arial Black,Arial';ctx.textAlign='center';
-      ctx.fillText('🌐  ONLINE',GW/2,334);ctx.font='11px Arial';ctx.fillText('(add Firebase config)',GW/2,350);
+      ctx.fillText('🌐  ONLINE',GW/2,388);ctx.font='11px Arial';ctx.fillText('(add Firebase config)',GW/2,404);
     }
-
-    const p=.55+.45*Math.sin(this.frame*.07);
-    ctx.globalAlpha=p;ctx.fillStyle='#FFD700';ctx.font='bold 13px Arial';ctx.textAlign='center';
-    ctx.fillText('or press SPACE / ENTER for online lobby',GW/2,375);ctx.globalAlpha=1;
   }
 
   _over(ctx){
     ctx.fillStyle='rgba(0,0,0,0.83)';ctx.fillRect(0,0,GW,GH);
     const[f1,f2]=this.fighters;
+    const isAI=this.mode==='ai';
+    const n1=isAI?'YOU':'RED', n2=isAI?'CPU':'BLUE';
+    const c1=COL.p1.shorts, c2=COL.p2.shorts;
     let winner,wc;
-    if(f1.totalScore>f2.totalScore){winner='🔴  RED  WINS!';wc=COL.p1.shorts}
-    else if(f2.totalScore>f1.totalScore){winner='🔵  BLUE  WINS!';wc=COL.p2.shorts}
+    if(f1.totalScore>f2.totalScore){winner=isAI?'🏆  YOU WIN!':'🔴  RED  WINS!';wc=c1}
+    else if(f2.totalScore>f1.totalScore){winner=isAI?'🤖  CPU WINS!':'🔵  BLUE  WINS!';wc=isAI?'#888':c2}
     else{winner="IT'S A DRAW!";wc='#FFD700'}
     ctx.textAlign='center';ctx.font='bold 62px Arial Black,Arial';
     ctx.strokeStyle='#000';ctx.lineWidth=6;ctx.strokeText(winner,GW/2,145);ctx.fillStyle=wc;ctx.fillText(winner,GW/2,145);
-    ctx.fillStyle='#fff';ctx.font='bold 22px Arial';ctx.fillText(`RED: ${f1.totalScore} pts      BLUE: ${f2.totalScore} pts`,GW/2,200);
-    ctx.fillStyle='#aaa';ctx.font='17px Arial';ctx.fillText(`Rounds — RED: ${f1.roundsWon}   BLUE: ${f2.roundsWon}`,GW/2,235);
+    ctx.fillStyle='#fff';ctx.font='bold 22px Arial';ctx.fillText(`${n1}: ${f1.totalScore} pts      ${n2}: ${f2.totalScore} pts`,GW/2,200);
+    ctx.fillStyle='#aaa';ctx.font='17px Arial';ctx.fillText(`Rounds — ${n1}: ${f1.roundsWon}   ${n2}: ${f2.roundsWon}`,GW/2,235);
     const p=.55+.45*Math.sin(this.frame*.07);
     ctx.globalAlpha=p;ctx.fillStyle='#FFD700';ctx.font='bold 20px Arial Black,Arial';
     ctx.fillText('PRESS  SPACE  TO  PLAY  AGAIN',GW/2,GH-35);ctx.globalAlpha=1;
