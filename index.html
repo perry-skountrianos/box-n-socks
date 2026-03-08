@@ -1089,7 +1089,7 @@ class Game{
     this._ls1={};this._ls2={}; // local input states (prev frame)
     this._btns=[];              // canvas clickable button rects
     this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;
-    this._aiRageTimer=0;
+    this._aiRageTimer=0;this._aiRetreatTimer=0;
     this._tournament=null; // {opponents:[...], idx:0, wins:0, losses:0}
     this.fighters=[
       new Fighter(220,.5,COL.p1),
@@ -1185,23 +1185,58 @@ class Game{
         // AI input
         const ai=this.fighters[1],pl=this.fighters[0];
         const dx=pl.x-ai.x, dz=pl.dz-ai.dz;
+        const absDx=Math.abs(dx);
         const ast=ANIMAL_STATS[ai.animal]||ANIMAL_STATS.elephant;
+
+        if(this._aiPunchDelay>0)this._aiPunchDelay--;
+        if(this._aiRageTimer>0)this._aiRageTimer--;
+        if(this._aiRetreatTimer>0)this._aiRetreatTimer--;
+        const aiRaging=this._aiRageTimer>0;
+        const retreating=this._aiRetreatTimer>0;
+
+        // Preferred horizontal gap before attacking
+        const IDEAL=85, TOO_CLOSE=48;
+        const aiRange=aiRaging?110:IDEAL;
+        const aiRandDelay=aiRaging?4:22;
+
+        // Is the player cornered (within 90px of either ring wall)?
+        const wallL=lerp(RG.fL,RG.nL,pl.dz)+90;
+        const wallR=lerp(RG.fR,RG.nR,pl.dz)-90;
+        const plCornered=pl.x<wallL||pl.x>wallR;
+
+        // ── Movement decisions ────────────────────────────────────────────
+        let mvL=false,mvR=false,mvU=false,mvD=false;
+
+        if(retreating){
+          // Back away from player
+          mvL=dx>0;mvR=dx<0;
+        }else if(absDx<TOO_CLOSE&&!ai.punchType){
+          // Too close — step back to comfortable distance
+          mvL=dx>0;mvR=dx<0;
+        }else if(plCornered&&absDx<IDEAL){
+          // Player cornered — back off to give them breathing room
+          mvL=dx>0;mvR=dx<0;
+        }else if(absDx>aiRange&&!plCornered){
+          // Approach only when not cornering the player
+          mvL=dx<0;mvR=dx>0;
+        }
+        // Z-axis tracking
+        mvU=dz<-0.05;mvD=dz>0.05;
+
         const aiS={
-          left:dx<-18,right:dx>18,
-          up:dz<-0.04,down:dz>0.04,
+          left:mvL,right:mvR,up:mvU,down:mvD,
           attackTick:this._aiAttackTick,
           jumpTick:this._aiJumpTick,
           squatTick:this._aiSquatTick,
           animal:ai.animal,
           _upGrace:0,_downGrace:0,
         };
-        if(this._aiPunchDelay>0)this._aiPunchDelay--;
-        if(this._aiRageTimer>0)this._aiRageTimer--;
-        const aiRaging=this._aiRageTimer>0;
-        const aiRange=aiRaging?120:90, aiRandDelay=aiRaging?4:18;
-        if(Math.abs(dx)<aiRange&&Math.abs(dz)<ast.dzReach&&this._aiPunchDelay<=0&&ai.cooldown<=0){
+
+        if(absDx<aiRange&&Math.abs(dz)<ast.dzReach&&this._aiPunchDelay<=0&&ai.cooldown<=0){
           this._aiAttackTick++;aiS.attackTick=this._aiAttackTick;
           this._aiPunchDelay=ast.punchDur+ast.cooldown+Math.floor(Math.random()*aiRandDelay);
+          // Back off after punching so the player can breathe
+          this._aiRetreatTimer=28+Math.floor(Math.random()*20);
         }
         this._ls2=aiS;
         this.fighters[1].applyInput(aiS);
@@ -1292,7 +1327,7 @@ class Game{
             this.state='champion';this.msgT=999;
           }else{// next fight
             this.fighters[1].animal=t.opponents[t.idx];
-            this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;this._aiRageTimer=0;
+            this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;this._aiRageTimer=0;this._aiRetreatTimer=0;
             this._newGame();
           }
         }else{
@@ -1359,7 +1394,7 @@ class Game{
     this.fighters[0].animal=playerAnimal;
     this.myAnimal=playerAnimal;
     this.fighters[1].animal=opps[0];
-    this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;this._aiRageTimer=0;
+    this._aiAttackTick=0;this._aiPunchDelay=0;this._aiJumpTick=0;this._aiSquatTick=0;this._aiRageTimer=0;this._aiRetreatTimer=0;
     this._newGame();
   }
   _unlockNinjaCat(){
