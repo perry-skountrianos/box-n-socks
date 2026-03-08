@@ -119,6 +119,7 @@ const ONLINE_ENABLED = !!FB_CONFIG.databaseURL;
 // ── Constants ────────────────────────────────────────────────────────────────
 const GW=800, GH=450;
 const ROUND_SECS=60, TOTAL_ROUNDS=3;
+const NET_SEND_HZ=60;
 const RG={nL:38,nR:762,nY:382,fL:148,fR:652,fY:188};
 const FAR_SC=0.58, NEAR_SC=1.0;
 const COL={
@@ -398,6 +399,22 @@ class Network{
     this.db=null;this.roomRef=null;
     this.myKey=null;this.remoteInputs={};
     this._sendFrame=0;this.onOpponentJoined=null;
+    this._sendMinMs=1000/NET_SEND_HZ;
+    this._lastSendMs=0;
+    this._lastSentSig='';
+    this._remoteRecvMs=0;
+  }
+  _normState(s){
+    const v=s||{};
+    return {
+      left:!!v.left,right:!!v.right,up:!!v.up,down:!!v.down,block:!!v.block,
+      punchTick:v.punchTick|0,kickTick:v.kickTick|0
+    };
+  }
+  _ingestRemote(v){
+    if(!v)return;
+    this.remoteInputs=this._normState(v);
+    this._remoteRecvMs=performance.now();
   }
   static genCode(){
     const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -424,7 +441,7 @@ class Network{
         if(snap.val()==='ready')onOpponentJoined();
       });
       // Listen to guest inputs
-      this.roomRef.child('guest').on('value',snap=>{this.remoteInputs=snap.val()||{}});
+      this.roomRef.child('guest').on('value',snap=>{this._ingestRemote(snap.val())});
     }).catch(e=>onError('Network error: '+e.message));
   }
   join(code,onConnected,onError){
@@ -439,18 +456,25 @@ class Network{
       this.roomRef.child('state').set('ready');
       this.roomRef.onDisconnect().remove();
       // Listen to host inputs
-      this.roomRef.child('host').on('value',snap=>{this.remoteInputs=snap.val()||{}});
+      this.roomRef.child('host').on('value',snap=>{this._ingestRemote(snap.val())});
       onConnected();
     }).catch(()=>onError('Connection failed. Check internet.'));
   }
   send(state){
     if(!this.roomRef)return;
-    if(++this._sendFrame%3!==0)return; // ~20fps send rate
-    this.roomRef.child(this.myKey).set(state);
+    const now=performance.now();
+    if(now-this._lastSendMs<this._sendMinMs)return;
+    this._lastSendMs=now;
+    const out=this._normState(state);
+    const sig=`${+out.left}${+out.right}${+out.up}${+out.down}${+out.block}|${out.punchTick}|${out.kickTick}`;
+    // Skip redundant writes for static input while still sending immediate changes.
+    if(sig===this._lastSentSig)return;
+    this._lastSentSig=sig;
+    this.roomRef.child(this.myKey).set(out);
   }
   disconnect(){
     if(this.roomRef){this.roomRef.off();this.roomRef.remove();this.roomRef=null}
-    this.remoteInputs={};
+    this.remoteInputs={};this._lastSentSig='';this._remoteRecvMs=0;
   }
 }
 
