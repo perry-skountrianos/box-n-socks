@@ -130,6 +130,7 @@ const CTRL={
   p1:{left:'KeyA',right:'KeyD',up:'KeyW',down:'KeyS',punch:'KeyF',kick:'KeyG',block:'KeyH'},
   p2:{left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',punch:'KeyJ',kick:'KeyK',block:'KeyL'},
 };
+const CTRL_ONLINE={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',punch:'KeyP',kick:'KeyK',block:'KeyD'};
 const MOVES={punch:{dur:18,dzReach:0.32},kick:{dur:22,dzReach:0.30}};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -560,7 +561,7 @@ class Game{
     this.state='title';this.round=1;
     this.timer=ROUND_SECS;this.cdTimer=0;
     this.msg='';this.msgT=0;
-    this.mode='local';   // 'local' | 'online'
+    this.mode='online';
     this.myIdx=0;        // 0=RED, 1=BLUE (online only)
     this.roomCode='';
     this._ls1={};this._ls2={}; // local input states (prev frame)
@@ -600,7 +601,7 @@ class Game{
     const inp=this.inp;
 
     if(this.state==='title'){
-      if(inp.was('Space')||inp.was('Enter')){this.mode='local';this._newGame()}
+      if(inp.was('Space')||inp.was('Enter'))this._showLobby();
     }
     else if(this.state==='cd'){
       this.cdTimer--;
@@ -613,19 +614,13 @@ class Game{
       this.timer-=1/60;
       if(this.mode==='online'){
         // Local player controls their fighter; remote inputs drive opponent
-        const ctrl=this.myIdx===0?CTRL.p1:CTRL.p2;
+        const ctrl=CTRL_ONLINE;
         const prev=this.myIdx===0?this._ls1:this._ls2;
         const localS=mkState(inp,ctrl,prev);
         if(this.myIdx===0)this._ls1=localS;else this._ls2=localS;
         this.net.send(localS);
         this.fighters[this.myIdx].applyInput(localS);
         this.fighters[1-this.myIdx].applyInput(this.net.remoteInputs);
-      }else{
-        // Local two-player
-        this._ls1=mkState(inp,CTRL.p1,this._ls1);
-        this._ls2=mkState(inp,CTRL.p2,this._ls2);
-        this.fighters[0].applyInput(this._ls1);
-        this.fighters[1].applyInput(this._ls2);
       }
       this._separate();this._checkHits();
       this.effects=this.effects.filter(e=>{e.update();return e.alive});
@@ -715,7 +710,6 @@ class Game{
     const y=((e.clientY-r.top)*sy)/this.scale;
     for(const b of this._btns){
       if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){
-        if(b.id==='local'){this.mode='local';this._newGame()}
         if(b.id==='online'){this._showLobby()}
         break;
       }
@@ -871,18 +865,14 @@ class Game{
     ctx.fillStyle='#cc0000';ctx.fillText('BOX',GW/2-88,108);
     ctx.fillStyle='#0044ee';ctx.fillText('N',GW/2+12,108);
     ctx.fillStyle='#FFD700';ctx.fillText('SOCKS!',GW/2+132,142);
-    ctx.fillStyle='#ccc';ctx.font='bold 15px Arial';ctx.fillText('Same Keyboard  •  or  •  Online Multiplayer',GW/2,168);
+    ctx.fillStyle='#ccc';ctx.font='bold 15px Arial';ctx.fillText('Online Multiplayer',GW/2,168);
 
-    // Controls (compact)
-    const cards=[
-      {x:GW/2-185,name:'🔴 RED — P1',c:'#cc0000',lines:['WASD  Move','F  Punch   G  Kick','H  Block']},
-      {x:GW/2+185,name:'🔵 BLUE — P2',c:'#0044ee',lines:['↑←↓→  Move','J  Punch   K  Kick','L  Block']},
-    ];
-    cards.forEach(card=>{
-      ctx.fillStyle=card.c+'33';rrect(ctx,card.x-120,182,240,102,10);
-      ctx.fillStyle=card.c;ctx.font='bold 14px Arial Black,Arial';ctx.textAlign='center';ctx.fillText(card.name,card.x,202);
-      ctx.fillStyle='#ddd';ctx.font='13px Arial';card.lines.forEach((l,i)=>ctx.fillText(l,card.x,222+i*22));
-    });
+    // Controls (shared for both players)
+    ctx.fillStyle='#00339933';rrect(ctx,GW/2-150,182,300,102,10);
+    ctx.fillStyle='#4da3ff';ctx.font='bold 14px Arial Black,Arial';ctx.textAlign='center';
+    ctx.fillText('BOTH PLAYERS CONTROLS',GW/2,202);
+    ctx.fillStyle='#ddd';ctx.font='13px Arial';
+    ['Arrows  Move','P  Punch   K  Kick','D  Defend'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*22));
 
     // Mode buttons
     this._btns=[];
@@ -892,18 +882,17 @@ class Game{
       ctx.fillText(label,x+w/2,y+h/2+6);
       this._btns.push({x,y,w,h,id});
     };
-    drawBtn(GW/2-195,310,180,48,'🎮  LOCAL PLAY','#7a0000','local');
     if(ONLINE_ENABLED){
-      drawBtn(GW/2+15,310,180,48,'🌐  ONLINE PLAY','#003399','online');
+      drawBtn(GW/2-90,310,180,48,'🌐  ONLINE PLAY','#003399','online');
     }else{
-      ctx.fillStyle='rgba(255,255,255,0.18)';rrect(ctx,GW/2+15,310,180,48,10);
+      ctx.fillStyle='rgba(255,255,255,0.18)';rrect(ctx,GW/2-90,310,180,48,10);
       ctx.fillStyle='#555';ctx.font='bold 13px Arial Black,Arial';ctx.textAlign='center';
-      ctx.fillText('🌐  ONLINE',GW/2+105,334);ctx.font='11px Arial';ctx.fillText('(add Firebase config)',GW/2+105,350);
+      ctx.fillText('🌐  ONLINE',GW/2,334);ctx.font='11px Arial';ctx.fillText('(add Firebase config)',GW/2,350);
     }
 
     const p=.55+.45*Math.sin(this.frame*.07);
     ctx.globalAlpha=p;ctx.fillStyle='#FFD700';ctx.font='bold 13px Arial';ctx.textAlign='center';
-    ctx.fillText('or press SPACE for local play',GW/2,375);ctx.globalAlpha=1;
+    ctx.fillText('or press SPACE / ENTER for online lobby',GW/2,375);ctx.globalAlpha=1;
   }
 
   _over(ctx){
@@ -928,14 +917,13 @@ function setupTouch(inp){
   if(!('ontouchstart' in window)&&window.innerWidth>900)return;
   const S=Math.min(48,window.innerWidth/17),G=S+7,bY=12;
   const defs=[
-    {lbl:'↑',k:'KeyW',   b:bY+G*2,lp:8+G},{lbl:'←',k:'KeyA',b:bY+G,lp:8},
-    {lbl:'↓',k:'KeyS',   b:bY,    lp:8+G},{lbl:'→',k:'KeyD',b:bY+G,lp:8+G*2},
-    {lbl:'👊',k:'KeyF',  b:bY+G,  lp:8+G*3.6},{lbl:'🦵',k:'KeyG',b:bY,lp:8+G*3.6},
-    {lbl:'🛡',k:'KeyH',  b:bY+G*2,lp:8+G*3.6},
-    {lbl:'↑',k:'ArrowUp',   b:bY+G*2,rp:8+G},{lbl:'→',k:'ArrowRight',b:bY+G,rp:8},
-    {lbl:'↓',k:'ArrowDown', b:bY,    rp:8+G},{lbl:'←',k:'ArrowLeft', b:bY+G,rp:8+G*2},
-    {lbl:'👊',k:'KeyJ',b:bY+G,  rp:8+G*3.6},{lbl:'🦵',k:'KeyK',b:bY,    rp:8+G*3.6},
-    {lbl:'🛡',k:'KeyL',b:bY+G*2,rp:8+G*3.6},
+    {lbl:'UP',k:'ArrowUp',      b:bY+G*2,lp:8+G},
+    {lbl:'LEFT',k:'ArrowLeft',  b:bY+G,  lp:8},
+    {lbl:'DOWN',k:'ArrowDown',  b:bY,    lp:8+G},
+    {lbl:'RIGHT',k:'ArrowRight',b:bY+G,  lp:8+G*2},
+    {lbl:'P',k:'KeyP',b:bY+G,   rp:8+G*3.6},
+    {lbl:'K',k:'KeyK',b:bY,     rp:8+G*3.6},
+    {lbl:'D',k:'KeyD',b:bY+G*2, rp:8+G*3.6},
   ];
   defs.forEach(cfg=>{
     const el=document.createElement('div');el.className='tbtn';el.textContent=cfg.lbl;
@@ -998,3 +986,7 @@ if(ONLINE_ENABLED){
 </script>
 </body>
 </html>
+
+
+
+
