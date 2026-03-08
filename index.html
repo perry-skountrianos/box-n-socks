@@ -1895,20 +1895,26 @@ class Game{
       [drawTiger,  596, fY-26, 0.48, 1.4],
       [drawHippo,  642, fY-22, 0.44, 0.6],
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
-    // Left side
+    // Left side — clipped to outside-ring area so animals don't bleed onto the mat
+    ctx.save();
+    ctx.beginPath();ctx.rect(0,0,nL+4,nY+4);ctx.clip();
     [
-      [drawFlamingo, 18,  nY-22, 0.72, 0.5],
-      [drawMonkey,   38,  nY-14, 0.78, 2.1],
-      [drawSnake,    14,  nY-66, 0.60, 3.5],
-      [drawZebra,    36,  nY-58, 0.60, 0.3],
+      [drawFlamingo, 18,  nY-48, 0.72, 0.5],
+      [drawMonkey,   38,  nY-40, 0.78, 2.1],
+      [drawSnake,    14,  nY-82, 0.60, 3.5],
+      [drawZebra,    36,  nY-74, 0.60, 0.3],
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
-    // Right side
+    ctx.restore();
+    // Right side — clipped to outside-ring area
+    ctx.save();
+    ctx.beginPath();ctx.rect(nR-4,0,GW-(nR-4),nY+4);ctx.clip();
     [
-      [drawMonkey,   GW-38, nY-14, 0.78, 3.2],
-      [drawFlamingo, GW-18, nY-22, 0.72, 1.8],
-      [drawTiger,    GW-38, nY-58, 0.62, 2.7],
-      [drawParrot,   GW-16, nY-66, 0.65, 0.9],
+      [drawMonkey,   GW-38, nY-40, 0.78, 3.2],
+      [drawFlamingo, GW-18, nY-48, 0.72, 1.8],
+      [drawTiger,    GW-38, nY-74, 0.62, 2.7],
+      [drawParrot,   GW-16, nY-82, 0.65, 0.9],
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
+    ctx.restore();
 
     // ── Ring ─────────────────────────────────────────────────────────────────
     ctx.fillStyle='rgba(0,0,0,0.42)';ctx.beginPath();ctx.moveTo(nL+8,nY+22);ctx.lineTo(nR+8,nY+22);ctx.lineTo(fR+8,fY+8);ctx.lineTo(fL+8,fY+8);ctx.closePath();ctx.fill();
@@ -1962,7 +1968,7 @@ class Game{
     const tx=right?px+w-10:px+10,al=right?'right':'left';
     ctx.fillStyle=color;ctx.font='bold 16px Arial Black,Arial';ctx.textAlign=al;ctx.fillText(name,tx,y+20);
     ctx.fillStyle='#fff';ctx.font='bold 26px Arial Black,Arial';ctx.fillText(rs,tx,y+48);
-    ctx.fillStyle='#aaa';ctx.font='11px Arial';ctx.textAlign=right?'left':'right';ctx.fillText(`TOTAL:${ts}`,right?px+10:px+w-10,y+48);
+    const tsStr=+(+ts).toFixed(1);ctx.fillStyle='#aaa';ctx.font='11px Arial';ctx.textAlign=right?'left':'right';ctx.fillText(`TOTAL:${tsStr}`,right?px+10:px+w-10,y+48);
   }
 
   _msg(ctx){
