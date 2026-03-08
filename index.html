@@ -120,6 +120,7 @@ const ONLINE_ENABLED = !!FB_CONFIG.databaseURL;
 const GW=800, GH=450;
 const ROUND_SECS=60, TOTAL_ROUNDS=3;
 const NET_SEND_HZ=60;
+const ONLINE_START_DELAY_MS=150;
 const RG={nL:38,nR:762,nY:382,fL:148,fR:652,fY:188};
 const FAR_SC=0.58, NEAR_SC=1.0;
 const COL={
@@ -427,12 +428,55 @@ class Network{
   }
   _bindDC(dc,onOpen){
     this.dc=dc;
+    this.dc.binaryType='arraybuffer';
     dc.onopen=()=>{onOpen&&onOpen()};
     dc.onmessage=e=>{
-      try{this._ingestRemote(JSON.parse(e.data))}
-      catch(err){console.warn('Bad RTC payload',err)}
+      this._ingestMessage(e.data);
     };
     dc.onerror=e=>console.warn('DataChannel error',e);
+  }
+  _packState(s){
+    const out=this._normState(s);
+    let flags=0;
+    if(out.left)flags|=1;
+    if(out.right)flags|=2;
+    if(out.up)flags|=4;
+    if(out.down)flags|=8;
+    if(out.block)flags|=16;
+    const buf=new ArrayBuffer(5);
+    const dv=new DataView(buf);
+    dv.setUint8(0,flags);
+    dv.setUint16(1,out.punchTick&0xffff,true);
+    dv.setUint16(3,out.kickTick&0xffff,true);
+    return buf;
+  }
+  _unpackState(buf){
+    const dv=new DataView(buf);
+    const flags=dv.getUint8(0);
+    return {
+      left:!!(flags&1),
+      right:!!(flags&2),
+      up:!!(flags&4),
+      down:!!(flags&8),
+      block:!!(flags&16),
+      punchTick:dv.getUint16(1,true),
+      kickTick:dv.getUint16(3,true),
+    };
+  }
+  _ingestMessage(data){
+    if(data instanceof ArrayBuffer){
+      try{this._ingestRemote(this._unpackState(data))}
+      catch(err){console.warn('Bad RTC binary payload',err)}
+      return;
+    }
+    if(typeof data==='string'){
+      try{this._ingestRemote(JSON.parse(data))}
+      catch(err){console.warn('Bad RTC string payload',err)}
+      return;
+    }
+    if(typeof Blob!=='undefined'&&data instanceof Blob){
+      data.arrayBuffer().then(b=>this._ingestRemote(this._unpackState(b))).catch(err=>console.warn('Bad RTC blob payload',err));
+    }
   }
   static genCode(){
     const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -535,7 +579,7 @@ class Network{
     const now=performance.now();
     if(now-this._lastSendMs<this._sendMinMs)return;
     this._lastSendMs=now;
-    this.dc.send(JSON.stringify(this._normState(state)));
+    this.dc.send(this._packState(state));
   }
   disconnect(){
     if(this.dc){try{this.dc.close()}catch{}this.dc=null}
@@ -744,7 +788,7 @@ class Game{
           document.getElementById('lobby').classList.remove('show');
           this.mode='online';this.myIdx=0;
           this._newGame();
-        },1200);
+        },ONLINE_START_DELAY_MS);
       },err=>{alert('Error: '+err)});
     };
 
@@ -766,7 +810,7 @@ class Game{
           document.getElementById('lobby').classList.remove('show');
           this.mode='online';this.myIdx=1;
           this._newGame();
-        },1200);
+        },ONLINE_START_DELAY_MS);
       },err=>{$('lb-err').textContent=err});
     };
     $('lb-do-join').onclick=doJoin;
