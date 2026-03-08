@@ -1482,10 +1482,21 @@ class Game{
     }
 
     // ── Spectator animal helpers ──────────────────────────────────────────────
-    const bob=(ph,sp=0.05)=>Math.sin(f*sp+ph)*2.8;
+    // Crowd hype: 0=calm, 1=going crazy (when a fighter is near knockdown)
+    let crowdHype=0;
+    if(this.state==='fight'){
+      for(const fi of this.fighters){
+        const st=ANIMAL_STATS[fi.animal]||ANIMAL_STATS.elephant;
+        const ratio=fi.noHitStreak/st.knockdownHits;
+        if(ratio>0.4)crowdHype=Math.max(crowdHype,ratio);
+      }
+    }
+    const hypeAmp=1+crowdHype*3.5;
+    const hypeSpd=1+crowdHype*1.8;
+    const bob=(ph,sp=0.05)=>Math.sin(f*sp*hypeSpd+ph)*2.8*hypeAmp;
 
     const drawMonkey=(x,y,sc,ph)=>{
-      const b=bob(ph);const wave=Math.sin(f*0.08+ph)*0.45;
+      const b=bob(ph);const wave=Math.sin(f*0.08*hypeSpd+ph)*(0.45+crowdHype*0.9);
       ctx.save();ctx.translate(x,y+b);ctx.scale(sc,sc);
       ctx.fillStyle='#5a2e10';ctx.beginPath();ctx.ellipse(0,10,9,11,0,0,Math.PI*2);ctx.fill();
       ctx.fillStyle='#7a3e1a';ctx.beginPath();ctx.arc(0,-4,11,0,Math.PI*2);ctx.fill();
@@ -1500,7 +1511,7 @@ class Game{
     };
 
     const drawParrot=(x,y,sc,ph)=>{
-      const b=bob(ph,0.07);const flap=Math.abs(Math.sin(f*0.12+ph));
+      const b=bob(ph,0.07);const flap=Math.abs(Math.sin(f*0.12*hypeSpd+ph));
       ctx.save();ctx.translate(x,y+b);ctx.scale(sc,sc);
       ctx.fillStyle='#118811';ctx.beginPath();ctx.ellipse(0,5,8,12,0,0,Math.PI*2);ctx.fill();
       ctx.fillStyle='#cc2200';ctx.save();ctx.rotate(-0.3-flap*0.3);ctx.beginPath();ctx.ellipse(-5,4,5,10,0,0,Math.PI*2);ctx.fill();ctx.restore();
