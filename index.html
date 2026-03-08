@@ -253,23 +253,32 @@ function rrect(ctx,x,y,w,h,r){
   ctx.closePath();ctx.fill();
 }
 // Convert keyboard state to logical input state (attackTick is monotonic).
-// Double-tap ↑ = jump, double-tap ↓ = squat (grace window of 15 frames).
+// Double-tap ↑ = jump, double-tap ↓ = squat, double-tap ←/→ = dash (grace window of 15 frames).
 function mkState(inp,ctrl,prev){
   const attackPressed=inp.was(ctrl.attack);
   const upPressed=inp.was(ctrl.up), downPressed=inp.was(ctrl.down);
-  const upGrace  =Math.max(0,(prev._upGrace  ||0)-1);
-  const downGrace=Math.max(0,(prev._downGrace||0)-1);
+  const leftPressed=inp.was(ctrl.left), rightPressed=inp.was(ctrl.right);
+  const upGrace   =Math.max(0,(prev._upGrace   ||0)-1);
+  const downGrace =Math.max(0,(prev._downGrace ||0)-1);
+  const leftGrace =Math.max(0,(prev._leftGrace ||0)-1);
+  const rightGrace=Math.max(0,(prev._rightGrace||0)-1);
   let jumpTick =(prev.jumpTick ||0);
   let squatTick=(prev.squatTick||0);
-  if(upPressed)  {if(upGrace  >0)jumpTick++; }
-  if(downPressed){if(downGrace>0)squatTick++;}
+  let dashLTick=(prev.dashLTick||0);
+  let dashRTick=(prev.dashRTick||0);
+  if(upPressed)   {if(upGrace   >0)jumpTick++; }
+  if(downPressed) {if(downGrace >0)squatTick++;}
+  if(leftPressed) {if(leftGrace >0)dashLTick++;}
+  if(rightPressed){if(rightGrace>0)dashRTick++;}
   return{
     left: inp.isDown(ctrl.left), right:inp.isDown(ctrl.right),
     up:   inp.isDown(ctrl.up),   down: inp.isDown(ctrl.down),
     attackTick:(prev.attackTick||0)+(attackPressed?1:0),
-    jumpTick, squatTick,
-    _upGrace:  upPressed  ?15:upGrace,
-    _downGrace:downPressed?15:downGrace,
+    jumpTick, squatTick, dashLTick, dashRTick,
+    _upGrace:   upPressed   ?15:upGrace,
+    _downGrace: downPressed ?15:downGrace,
+    _leftGrace: leftPressed ?15:leftGrace,
+    _rightGrace:rightPressed?15:rightGrace,
     animal:(prev.animal&&ANIMAL_BITS[prev.animal]!==undefined)?prev.animal:'elephant',
   };
 }
@@ -434,8 +443,8 @@ class Fighter{
     this.punchType=null;this.punchTimer=0;this.punchDur=0;this.punchHit=false;
     this.hitFlash=0;this.cooldown=0;this.walkT=0;
     this._at=0; // attack tick tracker
-    this._jt=0;this._st=0; // jump/squat tick trackers
-    this.jumpTimer=0;this.squatTimer=0;
+    this._jt=0;this._st=0;this._dlt=0;this._drt=0; // jump/squat/dash tick trackers
+    this.jumpTimer=0;this.squatTimer=0;this.dashTimer=0;
     this.noHitStreak=0;
     this.downTimer=0;
     this.animal='elephant';
@@ -481,6 +490,8 @@ class Fighter{
     let mvx=0,mvz=0;
     if(s.left) mvx=-ast.speed*spMul;if(s.right)mvx=ast.speed*spMul;
     if(s.up)   mvz=-ast.zspeed;if(s.down) mvz=ast.zspeed;
+    if(this.dashTimer>0){mvx=this._dashDir*ast.speed*3.5;this.dashTimer--;}
+
     this.dz=Math.max(0, Math.min(1,    this.dz+mvz+this.kbz));
     const _margin=24,_lBound=lerp(RG.fL,RG.nL,this.dz)+_margin,_rBound=lerp(RG.fR,RG.nR,this.dz)-_margin;
     this.x =Math.max(_lBound,Math.min(_rBound,this.x +mvx+this.kbx));
@@ -504,6 +515,9 @@ class Fighter{
     const st2=s.squatTick||0;
     if(st2>this._st){this._st=st2;if(this.squatTimer<=0&&this.jumpTimer<=0)this.squatTimer=28;}
     if(this.squatTimer>0)this.squatTimer--;
+    const dlt=s.dashLTick||0,drt=s.dashRTick||0;
+    if(dlt>this._dlt){this._dlt=dlt;if(this.dashTimer<=0){this._dashDir=-1;this.dashTimer=9;}}
+    if(drt>this._drt){this._drt=drt;if(this.dashTimer<=0){this._dashDir=1; this.dashTimer=9;}}
   }
 
   receiveHit(att,audio){
@@ -1202,7 +1216,20 @@ class Game{
         // ── Movement decisions ────────────────────────────────────────────
         let mvL=false,mvR=false,mvU=false,mvD=false;
 
-        if(retreating){
+        // Find nearest landed banana
+        const landedPU=this._powerups.filter(p=>p.landed);
+        let nearestPU=null,nearestPUDist=Infinity;
+        for(const pu of landedPU){
+          const d=Math.abs(pu.x-ai.x)+Math.abs(pu.dz-ai.dz)*200;
+          if(d<nearestPUDist){nearestPUDist=d;nearestPU=pu;}
+        }
+
+        if(nearestPU&&nearestPUDist>18){
+          // Chase banana aggressively — ignore retreat/combat spacing
+          const bDx=nearestPU.x-ai.x, bDz=nearestPU.dz-ai.dz;
+          mvL=bDx<-4;mvR=bDx>4;
+          mvU=bDz<-0.03;mvD=bDz>0.03;
+        }else if(retreating){
           // Back away from player
           mvL=dx>0;mvR=dx<0;
         }else if(absDx<TOO_CLOSE&&!ai.punchType){
@@ -1215,8 +1242,8 @@ class Game{
           // Approach only when not cornering the player
           mvL=dx<0;mvR=dx>0;
         }
-        // Z-axis tracking
-        mvU=dz<-0.05;mvD=dz>0.05;
+        // Z-axis tracking (only when not chasing banana)
+        if(!nearestPU||nearestPUDist<=18){mvU=dz<-0.05;mvD=dz>0.05;}
 
         const aiS={
           left:mvL,right:mvR,up:mvU,down:mvD,
