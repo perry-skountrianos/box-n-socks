@@ -477,6 +477,7 @@ class Game{
     ];
     this._resize();
     window.addEventListener('resize',()=>this._resize());
+    this.canvas.addEventListener('pointerup',e=>this._click(e));
     this.canvas.addEventListener('click',e=>this._click(e));
     this.canvas.addEventListener('touchend',e=>{e.preventDefault();this._click(e.changedTouches[0])},{passive:false});
     this._initLobbyUI();
@@ -494,7 +495,7 @@ class Game{
       this.canvas.width=w;
       this.canvas.height=Math.floor(w/r);
     }
-    this.scale=Math.max(1,this.canvas.width/GW);
+    this.scale=Math.min(this.canvas.width/GW,this.canvas.height/GH);
   }
 
   _loop(){this._update();this._draw();requestAnimationFrame(()=>this._loop())}
@@ -615,7 +616,9 @@ class Game{
   _click(e){
     if(this.state!=='title')return;
     const r=this.canvas.getBoundingClientRect();
-    const x=(e.clientX-r.left)/this.scale, y=(e.clientY-r.top)/this.scale;
+    const sx=this.canvas.width/r.width, sy=this.canvas.height/r.height;
+    const x=((e.clientX-r.left)*sx)/this.scale;
+    const y=((e.clientY-r.top)*sy)/this.scale;
     for(const b of this._btns){
       if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){
         if(b.id==='local'){this.mode='local';this._newGame()}
