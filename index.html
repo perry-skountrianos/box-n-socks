@@ -2046,7 +2046,7 @@ class Game{
     ctx.fillStyle='rgba(0,0,0,0.68)';rrect(ctx,px,y,w,h,9);ctx.fillStyle=color;ctx.fillRect(right?px+w-6:px,y,6,h);
     const tx=right?px+w-10:px+10,al=right?'right':'left';
     ctx.fillStyle=color;ctx.font='bold 16px Arial Black,Arial';ctx.textAlign=al;ctx.fillText(name,tx,y+20);
-    ctx.fillStyle='#fff';ctx.font='bold 26px Arial Black,Arial';ctx.fillText(rs,tx,y+48);
+    const rsStr=+(+rs).toFixed(1);ctx.fillStyle='#fff';ctx.font='bold 26px Arial Black,Arial';ctx.fillText(rsStr,tx,y+48);
     const tsStr=+(+ts).toFixed(1);ctx.fillStyle='#aaa';ctx.font='11px Arial';ctx.textAlign=right?'left':'right';ctx.fillText(`TOTAL:${tsStr}`,right?px+10:px+w-10,y+48);
   }
 
