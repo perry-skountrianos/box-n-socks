@@ -1274,10 +1274,6 @@ class Game{
         }
       }
       for(const tf of this.fighters)if(tf.taunting>0)tf.taunting--;
-      // ── Miss streak boo ─────────────────────────────────────────────────
-      for(const mf of this.fighters){
-        if(mf.missStreak===3){this.audio.sfxCrowdBoo();this.effects.push(new HitEffect(mf.x,mf.sy-105,'MISS! 😂','#888888'));}
-      }
       // ── Rage mode ───────────────────────────────────────────────────────
       const[rf1,rf2]=this.fighters;
       const prevRage1=rf1.raging,prevRage2=rf2.raging;
