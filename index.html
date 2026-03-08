@@ -121,17 +121,15 @@ const GW=800, GH=450;
 const ROUND_SECS=60, TOTAL_ROUNDS=3;
 const NET_SEND_HZ=60;
 const ONLINE_START_DELAY_MS=150;
+const KNOCKDOWN_HITS=10;
+const KNOCKDOWN_FRAMES=10*60;
 const RG={nL:38,nR:762,nY:382,fL:148,fR:652,fY:188};
 const FAR_SC=0.58, NEAR_SC=1.0;
 const COL={
   p1:{skin:'#e8956d',shorts:'#cc0000',stripe:'#fff',  glove:'#fff',  shoe:'#111',   name:'RED' },
   p2:{skin:'#e8956d',shorts:'#003fcc',stripe:'#ffdd00',glove:'#ffdd00',shoe:'#001a66',name:'BLUE'},
 };
-const CTRL={
-  p1:{left:'KeyA',right:'KeyD',up:'KeyW',down:'KeyS',punch:'KeyF',kick:'KeyG',block:'KeyH'},
-  p2:{left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',punch:'KeyJ',kick:'KeyK',block:'KeyL'},
-};
-const CTRL_ONLINE={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',punch:'KeyP',kick:'KeyK',block:'KeyD'};
+const CTRL_ONLINE={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',attack:'Space'};
 const MOVES={punch:{dur:18,dzReach:0.32},kick:{dur:22,dzReach:0.30}};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -145,18 +143,19 @@ function rrect(ctx,x,y,w,h,r){
   ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
   ctx.closePath();ctx.fill();
 }
-// Convert keyboard state → logical input state (punchTick/kickTick are monotonic counters)
+// Convert keyboard state to logical input state (attackTick is monotonic).
 function mkState(inp,ctrl,prev){
+  const attackPressed=inp.was(ctrl.attack);
+  const attackType=attackPressed?(Math.random()<0.5?'punch':'kick'):(prev.attackType||'punch');
   return{
     left: inp.isDown(ctrl.left), right:inp.isDown(ctrl.right),
     up:   inp.isDown(ctrl.up),   down: inp.isDown(ctrl.down),
-    block:inp.isDown(ctrl.block),
-    punchTick:(prev.punchTick||0)+(inp.was(ctrl.punch)?1:0),
-    kickTick: (prev.kickTick ||0)+(inp.was(ctrl.kick) ?1:0),
+    attackTick:(prev.attackTick||0)+(attackPressed?1:0),
+    attackType,
   };
 }
 
-// ── Audio ────────────────────────────────────────────────────────────────────
+// ── Input ────────────────────────────────────────────────────────────────────
 class AudioEngine{
   constructor(){this.ac=null;this._tmr=null;this._beat=0;this._next=0;this.on=false}
   _init(){
@@ -240,7 +239,6 @@ class AudioEngine{
   sfxBell(){if(!this.ac)return;[880,1108,1320].forEach((hz,i)=>{const t=this.ac.currentTime+i*.022;const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.36/(i+1),t);g.gain.exponentialRampToValueAtTime(.0001,t+1.6);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+1.65)})}
 }
 
-// ── Input ────────────────────────────────────────────────────────────────────
 class Input{
   constructor(){
     this.dn={};this.pr={};
@@ -263,7 +261,9 @@ class Fighter{
     this.blocking=false;
     this.punchType=null;this.punchTimer=0;this.punchDur=0;this.punchHit=false;
     this.hitFlash=0;this.cooldown=0;this.walkT=0;
-    this._pt=0;this._kt=0; // punch/kick tick trackers
+    this._at=0; // attack tick tracker
+    this.noHitStreak=0;
+    this.downTimer=0;
   }
   get sy(){return RG.fY+this.dz*(RG.nY-RG.fY)}
   get sc(){return FAR_SC+this.dz*(NEAR_SC-FAR_SC)}
@@ -279,20 +279,29 @@ class Fighter{
   // ── Accept logical input state (works for both local keyboard and remote network) ──
   applyInput(s){
     if(!s)return;
-    this.kbx*=.72;this.kbz*=.72;
-    this.blocking=!this.punchType&&!!s.block;
-    let mvx=0,mvz=0;
-    if(!this.blocking){
-      if(s.left) mvx=-3.8;if(s.right)mvx=3.8;
-      if(s.up)   mvz=-.026;if(s.down) mvz=.026;
+    if(this.downTimer>0){
+      this.downTimer--;
+      this.punchType=null;this.punchTimer=0;this.blocking=false;
+      this.kbx*=.75;this.kbz*=.75;this.walkT*=.9;
+      if(this.hitFlash>0)this.hitFlash--;
+      return;
     }
+    this.kbx*=.72;this.kbz*=.72;
+    this.blocking=false;
+    let mvx=0,mvz=0;
+    if(s.left) mvx=-3.8;if(s.right)mvx=3.8;
+    if(s.up)   mvz=-.026;if(s.down) mvz=.026;
     this.x =Math.max(90,Math.min(GW-90,this.x +mvx+this.kbx));
     this.dz=Math.max(0, Math.min(1,    this.dz+mvz+this.kbz));
     if((mvx||mvz)&&!this.punchType)this.walkT+=.13;else this.walkT*=.72;
-    if(!this.punchType&&this.cooldown<=0&&!this.blocking){
-      const pt=s.punchTick||0,kt=s.kickTick||0;
-      if(pt>this._pt){this._pt=pt;this.punchType='punch';this.punchDur=this.punchTimer=MOVES.punch.dur;this.punchHit=false}
-      else if(kt>this._kt){this._kt=kt;this.punchType='kick';this.punchDur=this.punchTimer=MOVES.kick.dur;this.punchHit=false}
+    if(!this.punchType&&this.cooldown<=0){
+      const at=s.attackTick||0;
+      if(at>this._at){
+        this._at=at;
+        this.punchType=s.attackType==='kick'?'kick':'punch';
+        this.punchDur=this.punchTimer=MOVES[this.punchType].dur;
+        this.punchHit=false;
+      }
     }
     if(this.punchType){this.punchTimer--;if(this.punchTimer<=0){this.punchType=null;this.cooldown=12}}
     if(this.cooldown>0)this.cooldown--;
@@ -300,7 +309,7 @@ class Fighter{
   }
 
   receiveHit(att,audio){
-    if(this.blocking){audio.sfxBlock();return false}
+    if(this.downTimer>0)return false;
     this.hitFlash=15;
     const dir=this.x!==att.x?Math.sign(this.x-att.x):att.facing;
     const ddir=this.dz!==att.dz?Math.sign(this.dz-att.dz):0;
@@ -314,6 +323,14 @@ class Fighter{
     const{x,sy,sc,facing,col,punchType,punchTimer,punchDur,hitFlash,blocking,walkT}=this;
     ctx.save();ctx.translate(x,sy);ctx.scale(sc,sc);
     if(facing===-1)ctx.scale(-1,1);
+    const isDown=this.downTimer>0;
+    if(isDown){
+      // Lay the boxer on the canvas during knockdown.
+      const drop=Math.min(1,(KNOCKDOWN_FRAMES-this.downTimer)/14);
+      const rot=-1.35+drop*0.15;
+      ctx.translate(-26,2);
+      ctx.rotate(rot);
+    }
     const wc=Math.sin(walkT);
     if(hitFlash>0&&Math.floor(hitFlash/2)%2===0)ctx.globalAlpha=.38;
     // Shadow
@@ -356,7 +373,47 @@ class Fighter{
     ctx.fillStyle='#111';ctx.beginPath();ctx.arc(10,-123,3.5,0,Math.PI*2);ctx.fill();
     ctx.strokeStyle='#111';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(7,-111,7,.3,Math.PI-.3);ctx.stroke();
     ctx.fillStyle=col.stripe;ctx.fillRect(2,-111,12,4);
+    const shockPow=isDown?0.12:(punchType?1:(hitFlash>0?.8:.32));
+    this._shockAura(ctx,col,shockPow,walkT);
+    if(this.downTimer>0){
+      const secs=Math.ceil(this.downTimer/60);
+      ctx.globalAlpha=.9;
+      ctx.fillStyle='rgba(0,0,0,0.58)';this._r(ctx,-58,-170,116,26,7);
+      ctx.fillStyle='#ffcc00';ctx.font='bold 15px Arial Black,Arial';ctx.textAlign='center';
+      ctx.fillText(`DOWN ${secs}s`,0,-152);
+      ctx.globalAlpha=1;
+    }
     ctx.globalAlpha=1;ctx.restore();
+  }
+  _shockAura(ctx,col,pow,phase){
+    const t=performance.now()*.022+phase*6;
+    const colors=[col.shorts,col.stripe,'#66eeff'];
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    for(let i=0;i<6;i++){
+      const ringA=(i/6)*Math.PI*2+t*.7;
+      const bx=Math.cos(ringA)*26;
+      const by=-72+Math.sin(ringA)*44;
+      const ang=ringA+Math.sin(t+i)*.55;
+      const len=16+pow*24+Math.sin(t*1.8+i)*4;
+      this._bolt(ctx,bx,by,len,ang,4.2,4,colors[i%colors.length],1.2+pow*1.8,0.14+pow*.2);
+    }
+    ctx.restore();
+  }
+  _bolt(ctx,x,y,len,ang,jitter,segs,color,w,alpha){
+    const dx=Math.cos(ang),dy=Math.sin(ang);
+    ctx.beginPath();ctx.moveTo(x,y);
+    for(let i=1;i<=segs;i++){
+      const p=i/segs;
+      const jx=(Math.random()*2-1)*jitter;
+      const jy=(Math.random()*2-1)*jitter;
+      ctx.lineTo(x+dx*len*p+jx,y+dy*len*p+jy);
+    }
+    ctx.strokeStyle=color;
+    ctx.lineWidth=w;
+    ctx.globalAlpha=alpha;
+    ctx.stroke();
+    ctx.globalAlpha=1;
   }
   _arm(ctx,col,isFront,wc){
     const bx=isFront?20:-20,isPunching=isFront&&this.punchType==='punch';
@@ -409,8 +466,8 @@ class Network{
   _normState(s){
     const v=s||{};
     return {
-      left:!!v.left,right:!!v.right,up:!!v.up,down:!!v.down,block:!!v.block,
-      punchTick:v.punchTick|0,kickTick:v.kickTick|0
+      left:!!v.left,right:!!v.right,up:!!v.up,down:!!v.down,
+      attackTick:v.attackTick|0,attackType:v.attackType==='kick'?'kick':'punch'
     };
   }
   _ingestRemote(v){
@@ -442,12 +499,11 @@ class Network{
     if(out.right)flags|=2;
     if(out.up)flags|=4;
     if(out.down)flags|=8;
-    if(out.block)flags|=16;
-    const buf=new ArrayBuffer(5);
+    if(out.attackType==='kick')flags|=16;
+    const buf=new ArrayBuffer(3);
     const dv=new DataView(buf);
     dv.setUint8(0,flags);
-    dv.setUint16(1,out.punchTick&0xffff,true);
-    dv.setUint16(3,out.kickTick&0xffff,true);
+    dv.setUint16(1,out.attackTick&0xffff,true);
     return buf;
   }
   _unpackState(buf){
@@ -458,9 +514,8 @@ class Network{
       right:!!(flags&2),
       up:!!(flags&4),
       down:!!(flags&8),
-      block:!!(flags&16),
-      punchTick:dv.getUint16(1,true),
-      kickTick:dv.getUint16(3,true),
+      attackType:(flags&16)?'kick':'punch',
+      attackTick:dv.getUint16(1,true),
     };
   }
   _ingestMessage(data){
@@ -691,9 +746,11 @@ class Game{
 
   _startRound(){
     const[f1,f2]=this.fighters;
-    f1.x=220;f1.dz=.5;f1.kbx=0;f1.kbz=0;f1._pt=0;f1._kt=0;
-    f2.x=580;f2.dz=.5;f2.kbx=0;f2.kbz=0;f2._pt=0;f2._kt=0;
+    f1.x=220;f1.dz=.5;f1.kbx=0;f1.kbz=0;f1._at=0;
+    f2.x=580;f2.dz=.5;f2.kbx=0;f2.kbz=0;f2._at=0;
     f1.roundScore=0;f2.roundScore=0;
+    f1.noHitStreak=0;f2.noHitStreak=0;
+    f1.downTimer=0;f2.downTimer=0;
     f1.punchType=null;f2.punchType=null;f1.blocking=false;f2.blocking=false;
     this._ls1={};this._ls2={};
     this.timer=ROUND_SECS;this.effects=[];
@@ -737,7 +794,16 @@ class Game{
       const pb=att.punchBox;
       if(pb&&rects(pb,def.hitbox)){
         if(def.receiveHit(att,this.audio)){
-          att.roundScore++;att.punchHit=true;
+          att.roundScore+=att.punchType==='kick'?2:1;att.punchHit=true;
+          att.noHitStreak=0;
+          def.noHitStreak++;
+          if(def.noHitStreak>=KNOCKDOWN_HITS&&def.downTimer<=0){
+            def.noHitStreak=0;
+            def.downTimer=KNOCKDOWN_FRAMES;
+            def.punchType=null;def.punchTimer=0;
+            this.audio.sfxBell();
+            this.effects.push(new HitEffect(def.x,def.sy-118,'KNOCKOUT!', '#FFD700'));
+          }
           this.effects.push(new HitEffect(def.x,def.sy-85,att.punchType==='kick'?'KICK! 🦵':'POW! 👊',att.col.glove));
         }
       }
@@ -852,16 +918,69 @@ class Game{
   }
 
   _bg(ctx){
-    const sky=ctx.createLinearGradient(0,0,0,GH);sky.addColorStop(0,'#170630');sky.addColorStop(.55,'#3d1465');
+    const t=this.frame*0.01;
+    const sky=ctx.createLinearGradient(0,0,0,GH);
+    sky.addColorStop(0,'#0b0d2a');
+    sky.addColorStop(.42,'#2b1350');
+    sky.addColorStop(1,'#4b1f62');
     ctx.fillStyle=sky;ctx.fillRect(0,0,GW,GH);
-    ctx.fillStyle='rgba(255,255,255,0.05)';
-    for(let i=0;i<180;i++){ctx.beginPath();ctx.arc((i*131)%GW,16+(i*79)%158,3+(i%4),0,Math.PI*2);ctx.fill()}
-    const sp=ctx.createRadialGradient(GW/2,0,5,GW/2,0,GH*.72);sp.addColorStop(0,'rgba(255,245,200,0.12)');sp.addColorStop(1,'rgba(255,245,200,0)');
-    ctx.fillStyle=sp;ctx.fillRect(0,0,GW,GH);
+
+    // Ambient colored haze.
+    const hazeL=ctx.createRadialGradient(120,120,10,120,120,320);
+    hazeL.addColorStop(0,'rgba(255,90,120,0.20)');
+    hazeL.addColorStop(1,'rgba(255,90,120,0)');
+    ctx.fillStyle=hazeL;ctx.fillRect(0,0,GW,GH);
+    const hazeR=ctx.createRadialGradient(GW-140,110,10,GW-140,110,330);
+    hazeR.addColorStop(0,'rgba(70,150,255,0.24)');
+    hazeR.addColorStop(1,'rgba(70,150,255,0)');
+    ctx.fillStyle=hazeR;ctx.fillRect(0,0,GW,GH);
+
+    // Moving spotlight beams.
+    for(let i=0;i<5;i++){
+      const bx=((i*187+t*22)% (GW+180))-90;
+      const beam=ctx.createLinearGradient(bx,0,bx+140,GH*.62);
+      beam.addColorStop(0,'rgba(255,255,255,0.12)');
+      beam.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=beam;
+      ctx.beginPath();
+      ctx.moveTo(bx,0);
+      ctx.lineTo(bx+78,0);
+      ctx.lineTo(bx+150,GH*.60);
+      ctx.lineTo(bx+60,GH*.60);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Tiny far lights.
+    ctx.fillStyle='rgba(255,255,255,0.06)';
+    for(let i=0;i<170;i++){
+      ctx.beginPath();
+      ctx.arc((i*131)%GW,14+(i*83)%165,2.4+(i%3),0,Math.PI*2);
+      ctx.fill();
+    }
+
     const{nL,nR,nY,fL,fR,fY}=RG;
+    // Crowd silhouettes behind the ring.
+    ctx.fillStyle='rgba(5,5,12,0.45)';
+    for(let i=0;i<40;i++){
+      const x=(i*23+t*6)% (GW+20)-10;
+      const h=20+(i%6)*4;
+      ctx.beginPath();
+      ctx.arc(x,nY-h,8+(i%3),0,Math.PI*2);
+      ctx.fill();
+    }
+
     ctx.fillStyle='rgba(0,0,0,0.38)';ctx.beginPath();ctx.moveTo(nL+8,nY+22);ctx.lineTo(nR+8,nY+22);ctx.lineTo(fR+8,fY+8);ctx.lineTo(fL+8,fY+8);ctx.closePath();ctx.fill();
-    const mat=ctx.createLinearGradient(0,fY,0,nY+20);mat.addColorStop(0,'#b89448');mat.addColorStop(1,'#d4aa58');
+    const mat=ctx.createLinearGradient(0,fY,0,nY+20);mat.addColorStop(0,'#b5843c');mat.addColorStop(1,'#e4ba66');
     ctx.fillStyle=mat;ctx.beginPath();ctx.moveTo(nL,nY+20);ctx.lineTo(nR,nY+20);ctx.lineTo(fR,fY);ctx.lineTo(fL,fY);ctx.closePath();ctx.fill();
+
+    // Floor sheen.
+    const sheen=ctx.createLinearGradient(0,fY-18,0,nY+8);
+    sheen.addColorStop(0,'rgba(255,255,255,0.16)');
+    sheen.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=sheen;
+    ctx.beginPath();ctx.moveTo(nL,nY+20);ctx.lineTo(nR,nY+20);ctx.lineTo(fR,fY);ctx.lineTo(fL,fY);ctx.closePath();ctx.fill();
+
     ctx.strokeStyle='rgba(155,118,50,0.32)';ctx.lineWidth=1;ctx.beginPath();
     for(let d=0;d<=1;d+=.2){const y=lerp(fY,nY+20,d),xL=lerp(fL,nL,d),xR=lerp(fR,nR,d);ctx.moveTo(xL,y);ctx.lineTo(xR,y)}
     for(let i=0;i<=10;i++){const t=i/10;ctx.moveTo(lerp(nL,nR,t),nY+20);ctx.lineTo(lerp(fL,fR,t),fY)}
@@ -870,8 +989,14 @@ class Game{
     ctx.beginPath();ctx.moveTo(GW/2,nY+20);ctx.lineTo(GW/2,fY);ctx.stroke();ctx.setLineDash([]);
     ctx.fillStyle='#7a5408';ctx.fillRect(nL,nY+20,nR-nL,14);
     [[nL,nY,95],[nR,nY,95],[fL,fY,58],[fR,fY,58]].forEach(([px,py,h])=>{ctx.fillStyle='#7a5408';ctx.fillRect(px-9,py-h,18,h);ctx.fillStyle='#c8a020';ctx.fillRect(px-11,py-h-8,22,9)});
-    const rH=[34,58,82],rC=['#cc0000','#f0f0f0','#cc0000'];
+    const rH=[34,58,82],rC=['#e41313','#f7f7f7','#e41313'];
     rH.forEach((h,i)=>{const nh=h,fh=h*.62;ctx.strokeStyle=rC[i];ctx.lineWidth=i===1?5:4.5;ctx.beginPath();ctx.moveTo(nL,nY-nh);ctx.lineTo(nR,nY-nh);ctx.moveTo(fL,fY-fh);ctx.lineTo(fR,fY-fh);ctx.moveTo(nL,nY-nh);ctx.lineTo(fL,fY-fh);ctx.moveTo(nR,nY-nh);ctx.lineTo(fR,fY-fh);ctx.stroke()});
+
+    // Vignette for contrast.
+    const vign=ctx.createRadialGradient(GW/2,GH*.45,120,GW/2,GH*.45,GH*.82);
+    vign.addColorStop(0,'rgba(0,0,0,0)');
+    vign.addColorStop(1,'rgba(0,0,0,0.36)');
+    ctx.fillStyle=vign;ctx.fillRect(0,0,GW,GH);
   }
 
   _hud(ctx){
@@ -879,7 +1004,16 @@ class Game{
     this._scoreBox(ctx,14,10,f1.roundScore,f1.totalScore,'RED', COL.p1.shorts,false);
     this._scoreBox(ctx,GW-14,10,f2.roundScore,f2.totalScore,'BLUE',COL.p2.shorts,true);
     const secs=Math.ceil(this.timer),fl=this.state==='fight'&&secs<=10&&Math.floor(this.frame/15)%2===0;
-    ctx.fillStyle=fl?'rgba(180,0,0,0.78)':'rgba(0,0,0,0.62)';rrect(ctx,GW/2-55,8,110,48,10);
+    const card=ctx.createLinearGradient(0,8,0,56);
+    if(fl){
+      card.addColorStop(0,'rgba(220,35,35,0.86)');
+      card.addColorStop(1,'rgba(130,8,8,0.86)');
+    }else{
+      card.addColorStop(0,'rgba(28,28,42,0.86)');
+      card.addColorStop(1,'rgba(10,10,16,0.86)');
+    }
+    ctx.fillStyle=card;rrect(ctx,GW/2-55,8,110,48,10);
+    ctx.strokeStyle='rgba(255,255,255,0.22)';ctx.lineWidth=1.4;ctx.strokeRect(GW/2-54.5,8.5,109,47);
     const mm=Math.floor(this.timer/60),ss=Math.max(0,Math.floor(this.timer%60));
     ctx.fillStyle=fl?'#ff6666':'#fff';ctx.font='bold 30px Arial Black,Arial';ctx.textAlign='center';
     ctx.fillText(`${mm}:${String(ss).padStart(2,'0')}`,GW/2,43);
@@ -916,7 +1050,7 @@ class Game{
     ctx.fillStyle='#4da3ff';ctx.font='bold 14px Arial Black,Arial';ctx.textAlign='center';
     ctx.fillText('BOTH PLAYERS CONTROLS',GW/2,202);
     ctx.fillStyle='#ddd';ctx.font='13px Arial';
-    ['Arrows  Move','P  Punch   K  Kick','D  Defend'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*22));
+    ['Arrows  Move','SPACE  Attack','Punch = 1 pt   Kick = 2 pts'].forEach((l,i)=>ctx.fillText(l,GW/2,222+i*22));
 
     // Mode buttons
     this._btns=[];
@@ -965,9 +1099,7 @@ function setupTouch(inp){
     {lbl:'LEFT',k:'ArrowLeft',  b:bY+G,  lp:8},
     {lbl:'DOWN',k:'ArrowDown',  b:bY,    lp:8+G},
     {lbl:'RIGHT',k:'ArrowRight',b:bY+G,  lp:8+G*2},
-    {lbl:'P',k:'KeyP',b:bY+G,   rp:8+G*3.6},
-    {lbl:'K',k:'KeyK',b:bY,     rp:8+G*3.6},
-    {lbl:'D',k:'KeyD',b:bY+G*2, rp:8+G*3.6},
+    {lbl:'HIT',k:'Space',b:bY+G,rp:8+G*3.6},
   ];
   defs.forEach(cfg=>{
     const el=document.createElement('div');el.className='tbtn';el.textContent=cfg.lbl;
@@ -1030,6 +1162,11 @@ if(ONLINE_ENABLED){
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
