@@ -716,7 +716,10 @@ class Network{
     return {
       left:!!v.left,right:!!v.right,up:!!v.up,down:!!v.down,
       attackTick:v.attackTick|0,
-      animal:ANIMALS.includes(v.animal)?v.animal:'elephant'
+      jumpTick:v.jumpTick|0,
+      squatTick:v.squatTick|0,
+      animal:ANIMALS.includes(v.animal)?v.animal:'elephant',
+      roundScore:+(v.roundScore)||0,
     };
   }
   _ingestRemote(v){
@@ -749,12 +752,13 @@ class Network{
     if(out.up)flags|=4;
     if(out.down)flags|=8;
     flags|=(ANIMAL_BITS[out.animal]||0)<<4;
-    const buf=new ArrayBuffer(5);
+    const buf=new ArrayBuffer(7);
     const dv=new DataView(buf);
     dv.setUint8(0,flags);
     dv.setUint16(1,out.attackTick&0xffff,true);
     dv.setUint8(3,(out.jumpTick||0)&0xff);
     dv.setUint8(4,(out.squatTick||0)&0xff);
+    dv.setUint16(5,Math.round((out.roundScore||0)*10)&0xffff,true);
     return buf;
   }
   _unpackState(buf){
@@ -769,6 +773,7 @@ class Network{
       attackTick:dv.getUint16(1,true),
       jumpTick:buf.byteLength>=4?dv.getUint8(3):0,
       squatTick:buf.byteLength>=5?dv.getUint8(4):0,
+      roundScore:buf.byteLength>=7?dv.getUint16(5,true)/10:0,
     };
   }
   _ingestMessage(data){
@@ -973,10 +978,14 @@ class Game{
         const localS=mkState(inp,ctrl,prev);
         localS.animal=this.myAnimal;
         if(this.myIdx===0)this._ls1=localS;else this._ls2=localS;
+        localS.roundScore=this.fighters[this.myIdx].roundScore;
         this.net.send(localS);
         this.fighters[this.myIdx].applyInput(localS);
-        if(this.net.remoteInputs.animal)this.fighters[1-this.myIdx].animal=this.net.remoteInputs.animal;
-        this.fighters[1-this.myIdx].applyInput(this.net.remoteInputs);
+        const rem=this.net.remoteInputs;
+        if(rem.animal)this.fighters[1-this.myIdx].animal=rem.animal;
+        // Remote player is authoritative for their own score
+        if(rem.roundScore!==undefined)this.fighters[1-this.myIdx].roundScore=rem.roundScore;
+        this.fighters[1-this.myIdx].applyInput(rem);
       }else if(this.mode==='ai'){
         const localS=mkState(inp,CTRL_ONLINE,this._ls1||{});
         localS.animal=this.myAnimal;
@@ -1098,7 +1107,13 @@ class Game{
         }
       }
     };
-    check(f1,f2);check(f2,f1);
+    if(this.mode==='online'){
+      // Each client is authoritative only for hits their own fighter lands.
+      // Scores are then synced via packets, so both clients agree on the result.
+      if(this.myIdx===0)check(f1,f2);else check(f2,f1);
+    }else{
+      check(f1,f2);check(f2,f1);
+    }
   }
 
   // ── Canvas button click ───────────────────────────────────────────────────
