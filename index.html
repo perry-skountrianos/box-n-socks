@@ -191,7 +191,7 @@ const ROUND_SECS=60, TOTAL_ROUNDS=3;
 const NET_SEND_HZ=60;
 const ONLINE_START_DELAY_MS=150;
 const KNOCKDOWN_HITS=10;
-const KNOCKDOWN_FRAMES=10*60;
+const KNOCKDOWN_FRAMES=5*60;
 const RG={nL:38,nR:762,nY:382,fL:148,fR:652,fY:188};
 const FAR_SC=0.58, NEAR_SC=1.0;
 const COL={
@@ -1173,7 +1173,7 @@ class Game{
             this.audio.sfxBell();
             this._shakeFrames=35;this._shakePow=11;
             this._slowMo=Math.round(2/0.22);
-            this.effects.push(new HitEffect(myF.x,myF.sy-118,'KNOCKOUT!','#FFD700'));
+            this.effects.push(new HitEffect(myF.x,myF.sy-118,'KNOCKOUT! +20 🏆','#FFD700'));
           }
         }
         oppF.applyInput(rem);
@@ -1462,10 +1462,11 @@ class Game{
             def.downTimer=KNOCKDOWN_FRAMES;
             def.punchType=null;def.punchTimer=0;
             def.kbx=0;def.kbz=0;
+            att.roundScore+=20;
             this.audio.sfxBell();
             this._shakeFrames=35;this._shakePow=11;
             this._slowMo=Math.round(2/0.22); // ~2 real seconds of slow-mo
-            this.effects.push(new HitEffect(def.x,def.sy-118,'KNOCKOUT!', '#FFD700'));
+            this.effects.push(new HitEffect(def.x,def.sy-118,'KNOCKOUT! +20 🏆','#FFD700'));
           }
           this.effects.push(new HitEffect(def.x,def.sy-85,HIT_LABELS[att.animal]||'POW! 👊',att.col.glove));
         }
