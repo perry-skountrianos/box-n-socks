@@ -324,6 +324,15 @@ class AudioEngine{
   sfxKick(){if(!this.ac)return;const t=this.ac.currentTime;this._noise(350,.45,t,.07);const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(45,t+.13);g.gain.setValueAtTime(.75,t);g.gain.exponentialRampToValueAtTime(.0001,t+.15);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+.16)}
   sfxBlock(){if(!this.ac)return;this._noise(600,.28,this.ac.currentTime,.07)}
   sfxBell(){if(!this.ac)return;[880,1108,1320].forEach((hz,i)=>{const t=this.ac.currentTime+i*.022;const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.36/(i+1),t);g.gain.exponentialRampToValueAtTime(.0001,t+1.6);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+1.65)})}
+  sfxCombo(mega){
+    if(!this.ac)return;const t=this.ac.currentTime;
+    // Rising sweep
+    const o=this.ac.createOscillator(),g=this.ac.createGain();
+    o.type='sawtooth';o.frequency.setValueAtTime(mega?180:240,t);o.frequency.exponentialRampToValueAtTime(mega?880:560,t+.18);
+    g.gain.setValueAtTime(.0,t);g.gain.linearRampToValueAtTime(mega?.9:.55,t+.04);g.gain.exponentialRampToValueAtTime(.0001,t+.28);
+    o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+.30);
+    if(mega){this._noise(200,.7,t+.12,.22);}
+  }
 }
 
 class Input{
@@ -354,6 +363,8 @@ class Fighter{
     this.noHitStreak=0;
     this.downTimer=0;
     this.animal='elephant';
+    this.comboCount=0;
+    this.comboTimer=0;
   }
   get sy(){const base=RG.fY+this.dz*(RG.nY-RG.fY);return this.jumpTimer>0?base-Math.sin(this.jumpTimer/36*Math.PI)*78*this.sc:base;}
   get groundY(){return RG.fY+this.dz*(RG.nY-RG.fY)}
@@ -404,6 +415,7 @@ class Fighter{
     if(this.punchType){this.punchTimer--;if(this.punchTimer<=0){this.punchType=null;this.cooldown=ast.cooldown}}
     if(this.cooldown>0)this.cooldown--;
     if(this.hitFlash>0)this.hitFlash--;
+    if(this.comboTimer>0)this.comboTimer--;else if(this.comboTimer===0&&this.comboCount>0)this.comboCount=0;
     const jt=s.jumpTick||0;
     if(jt>this._jt){this._jt=jt;if(this.jumpTimer<=0&&this.squatTimer<=0)this.jumpTimer=36;}
     if(this.jumpTimer>0)this.jumpTimer--;
@@ -921,6 +933,7 @@ class Game{
     this.audio=new AudioEngine();
     this.net=new Network();
     this.effects=[];this.frame=0;
+    this._shakeFrames=0;this._shakePow=0;
     this.state='title';this.round=1;
     this.timer=ROUND_SECS;this.cdTimer=0;
     this.msg='';this.msgT=0;
@@ -1076,6 +1089,7 @@ class Game{
     this._finTimer=null;
     f1.roundScore=0;f2.roundScore=0;
     f1.noHitStreak=0;f2.noHitStreak=0;
+    f1.comboCount=0;f1.comboTimer=0;f2.comboCount=0;f2.comboTimer=0;
     f1.downTimer=0;f2.downTimer=0;
     f1.punchType=null;f2.punchType=null;f1.blocking=false;f2.blocking=false;
     this._ls1={};this._ls2={};
@@ -1130,12 +1144,27 @@ class Game{
           att.roundScore+=pts;att.punchHit=true;
           att.noHitStreak=0;
           def.noHitStreak++;
+          // Combo tracking
+          att.comboCount++;att.comboTimer=50;
+          if(att.comboCount===3){
+            this.audio.sfxCombo(false);
+            this._shakeFrames=18;this._shakePow=5;
+            this.effects.push(new HitEffect(att.x,att.sy-130,'COMBO x3! 🔥','#ff8800'));
+          }else if(att.comboCount===5){
+            this.audio.sfxCombo(true);
+            this._shakeFrames=28;this._shakePow=9;
+            this.effects.push(new HitEffect(att.x,att.sy-130,'MEGA COMBO!! 💥','#ff2200'));
+          }else if(att.comboCount>5&&att.comboCount%2===1){
+            this._shakeFrames=14;this._shakePow=6;
+            this.effects.push(new HitEffect(att.x,att.sy-130,`COMBO x${att.comboCount}! 🔥`,'#ff4400'));
+          }
           if(def.noHitStreak>=defSt.knockdownHits&&def.downTimer<=0){
             def.noHitStreak=0;
             def.downTimer=KNOCKDOWN_FRAMES;
             def.punchType=null;def.punchTimer=0;
             def.kbx=0;def.kbz=0;
             this.audio.sfxBell();
+            this._shakeFrames=35;this._shakePow=11;
             this.effects.push(new HitEffect(def.x,def.sy-118,'KNOCKOUT!', '#FFD700'));
           }
           this.effects.push(new HitEffect(def.x,def.sy-85,HIT_LABELS[att.animal]||'POW! 👊',att.col.glove));
@@ -1280,6 +1309,11 @@ class Game{
   _draw(){
     const ctx=this.ctx;
     ctx.save();ctx.scale(this.scale,this.scale);
+    if(this._shakeFrames>0){
+      const p=this._shakePow*(this._shakeFrames/30);
+      ctx.translate((Math.random()*2-1)*p,(Math.random()*2-1)*p);
+      this._shakeFrames--;
+    }
     this._bg(ctx);
     if(this.state!=='title'){
       const myF=this.fighters[this.myIdx];
