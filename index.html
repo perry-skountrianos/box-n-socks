@@ -75,6 +75,7 @@
       <button class="animal-btn" id="lb-ai-an-gorilla">GORILLA</button>
       <button class="animal-btn" id="lb-ai-an-rabbit">RABBIT</button>
       <button class="animal-btn" id="lb-ai-an-crocodile">CROC</button>
+      <button class="animal-btn" id="lb-ai-an-ninjacat" style="display:none;background:#220033!important;color:#cc88ff!important;border-color:#660099!important">🥷 NINJA</button>
     </div>
     <p class="stats-label">ANIMAL STATS</p>
     <table class="stats-table">
@@ -86,6 +87,7 @@
         <tr><td>🦍 Gorilla</td><td>★☆☆☆</td><td>2.5</td><td>★★★★</td><td>★★★★</td><td>Large</td></tr>
         <tr><td>🐰 Rabbit</td><td>★★★★</td><td>1</td><td>★★☆☆</td><td>★☆☆☆</td><td>Tiny</td></tr>
         <tr><td>🐊 Croc</td><td>★★★☆</td><td>1</td><td>★★★★</td><td>★★☆☆</td><td>Medium</td></tr>
+        <tr id="ninja-stat-row" style="display:none;color:#cc88ff"><td>🥷 Ninja Cat</td><td>★★★★★</td><td>1.5</td><td>★★★☆</td><td>★★☆☆</td><td>Tiny</td></tr>
       </tbody>
     </table>
     <button id="lb-ai-start">⚔️  LET'S FIGHT!</button>
@@ -104,6 +106,7 @@
       <button class="animal-btn" id="lb-an-gorilla">GORILLA</button>
       <button class="animal-btn" id="lb-an-rabbit">RABBIT</button>
       <button class="animal-btn" id="lb-an-crocodile">CROC</button>
+      <button class="animal-btn" id="lb-an-ninjacat" style="display:none;background:#220033!important;color:#cc88ff!important;border-color:#660099!important">🥷 NINJA</button>
     </div>
     <div class="row">
       <button id="lb-host">HOST GAME</button>
@@ -148,6 +151,7 @@
       <button class="animal-btn" id="lb-t-an-gorilla">GORILLA</button>
       <button class="animal-btn" id="lb-t-an-rabbit">RABBIT</button>
       <button class="animal-btn" id="lb-t-an-crocodile">CROC</button>
+      <button class="animal-btn" id="lb-t-an-ninjacat" style="display:none;background:#220033!important;color:#cc88ff!important;border-color:#660099!important">🥷 NINJA</button>
     </div>
     <p class="stats-label">OPPONENT ORDER (random)</p>
     <div id="lb-t-order" style="color:#FFD700;font-size:13px;margin:6px 0 14px;font-family:Arial,sans-serif"></div>
@@ -196,6 +200,12 @@ const COL={
 };
 const ANIMALS=['elephant','lion','cat','gorilla','rabbit','crocodile'];
 const ANIMAL_BITS={elephant:0,lion:1,cat:2,gorilla:3,rabbit:4,crocodile:5};
+// Ninja Cat unlock (saved in localStorage after tournament win)
+let _ninjaCatUnlocked=false;
+try{_ninjaCatUnlocked=!!localStorage.getItem('bns_ninjaCat');}catch{}
+if(_ninjaCatUnlocked&&!ANIMALS.includes('ninjacat')){
+  ANIMALS.push('ninjacat');ANIMAL_BITS['ninjacat']=6;
+}
 const CTRL_ONLINE={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown',attack:'Space'};
 const MOVES={punch:{dur:18,dzReach:0.32}};
 // hitScore  = points awarded per landed punch
@@ -225,6 +235,10 @@ const ANIMAL_STATS={
   crocodile:{speed:3.5,zspeed:0.024,punchDur:17,cooldown:13,dzReach:0.48,
              gloveX:20,gloveXExt:66,gloveY:-58,gloveR:11, kbx:7,  kbz:0.05,knockdownHits:10,
              hitScore:1, hitboxW:26,hitboxH:128},
+  // UNLOCKABLE — super speed, tiny hitbox, high crit chance
+  ninjacat: {speed:5.8,zspeed:0.042,punchDur:10,cooldown:5, dzReach:0.30,
+             gloveX:18,gloveXExt:52,gloveY:-55,gloveR:10.5,kbx:5,  kbz:0.04,knockdownHits:8,
+             hitScore:1.5,hitboxW:14,hitboxH:100},
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -579,6 +593,7 @@ class Fighter{
     if(this.animal==='gorilla')   {this._drawGorilla(ctx,col,wc,punchExt);return}
     if(this.animal==='rabbit')    {this._drawRabbit(ctx,col,wc,punchExt);return}
     if(this.animal==='crocodile') {this._drawCrocodile(ctx,col,wc,punchExt);return}
+    if(this.animal==='ninjacat')  {this._drawNinjaCat(ctx,col,wc,punchExt);return}
     this._drawElephant(ctx,col,wc,punchExt);
   }
   _drawElephant(ctx,col,wc,punchExt){
@@ -734,6 +749,43 @@ class Fighter{
     // Tail
     ctx.strokeStyle='#3d6830';ctx.lineWidth=6;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(-32,-80);ctx.quadraticCurveTo(-54,-70,-60,-48);ctx.stroke();
+  }
+  _drawNinjaCat(ctx,col,wc,punchExt){
+    // Dark smoke wisps
+    ctx.save();ctx.globalCompositeOperation='screen';
+    for(let i=0;i<5;i++){
+      const ang=performance.now()*.001*2+i*1.26;
+      ctx.globalAlpha=0.14;ctx.fillStyle='#8800ff';
+      ctx.beginPath();ctx.arc(Math.cos(ang)*18,-60+Math.sin(ang)*30,12,0,Math.PI*2);ctx.fill();
+    }
+    ctx.restore();
+    // Body — all black
+    ctx.fillStyle=col.shoe;
+    ctx.beginPath();ctx.ellipse(-10+wc*4,0,12,5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(10-wc*4,0,12,5,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#111';
+    this._r(ctx,-14,-46,11,46,4);this._r(ctx,3,-46,11,46,4);
+    this._r(ctx,-30,-86,60,44,10);
+    ctx.beginPath();ctx.arc(0,-112,20,0,Math.PI*2);ctx.fill();
+    // Ninja ears (pointy & wrapped)
+    ctx.beginPath();ctx.moveTo(-13,-124);ctx.lineTo(-6,-145);ctx.lineTo(0,-122);ctx.fill();
+    ctx.beginPath();ctx.moveTo(13,-124);ctx.lineTo(6,-145);ctx.lineTo(0,-122);ctx.fill();
+    // Ninja headband
+    ctx.fillStyle='#cc0000';ctx.fillRect(-20,-120,40,6);
+    // Glowing red eyes
+    ctx.fillStyle='#ff0000';ctx.beginPath();ctx.arc(-6,-116,3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(6,-116,3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,0,0,0.4)';ctx.beginPath();ctx.arc(-6,-116,5,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(6,-116,5,0,Math.PI*2);ctx.fill();
+    // Nose
+    ctx.fillStyle='#333';ctx.beginPath();ctx.arc(0,-108,2.5,0,Math.PI*2);ctx.fill();
+    // Fast punch arm
+    ctx.fillStyle='#111';this._r(ctx,9,-78,10,28,3);
+    ctx.strokeStyle='#111';ctx.lineWidth=8;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(19,-50);ctx.lineTo(18+punchExt*52,-55);ctx.stroke();
+    ctx.fillStyle=col.glove;ctx.beginPath();ctx.arc(18+punchExt*52,-55,10.5,0,Math.PI*2);ctx.fill();
+    // Red glove shimmer
+    ctx.fillStyle='rgba(255,0,0,0.3)';ctx.beginPath();ctx.arc(18+punchExt*52,-55,10.5,0,Math.PI*2);ctx.fill();
   }
   _shockAura(ctx,col,pow,phase){
     const t=performance.now()*.022+phase*6;
@@ -1312,6 +1364,14 @@ class Game{
   }
   _unlockNinjaCat(){
     try{localStorage.setItem('bns_ninjaCat','1');}catch{}
+    if(!ANIMALS.includes('ninjacat')){ANIMALS.push('ninjacat');ANIMAL_BITS['ninjacat']=6;}
+    // Show the hidden ninja cat buttons
+    ['lb-ai-an-ninjacat','lb-an-ninjacat','lb-t-an-ninjacat'].forEach(id=>{
+      const el=document.getElementById(id);if(el)el.style.display='';
+    });
+    // Add to tournament animal buttons click handlers
+    const el2=document.getElementById('lb-t-an-ninjacat');
+    // (already wired via ANIMALS loop in _initLobbyUI future call — handled on next open)
   }
   _returnToTitle(){
     this.net.disconnect();
@@ -1535,6 +1595,8 @@ class Game{
     ['ls-ai','ls-main','ls-host','ls-join','ls-conn'].forEach(s=>{
       $(s).style.display=s==='ls-ai'?'':'none';
     });
+    const nc=$('lb-ai-an-ninjacat');if(nc&&ANIMALS.includes('ninjacat'))nc.style.display='';
+    const nr=$('ninja-stat-row');if(nr&&ANIMALS.includes('ninjacat'))nr.style.display='';
     document.getElementById('lobby').classList.add('show');
   }
 
