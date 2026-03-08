@@ -398,10 +398,10 @@ class Network{
   constructor(){
     this.db=null;this.roomRef=null;
     this.myKey=null;this.remoteInputs={};
-    this._sendFrame=0;this.onOpponentJoined=null;
+    this.pc=null;this.dc=null;
+    this.isHost=false;
     this._sendMinMs=1000/NET_SEND_HZ;
     this._lastSendMs=0;
-    this._lastSentSig='';
     this._remoteRecvMs=0;
   }
   _normState(s){
@@ -416,6 +416,23 @@ class Network{
     this.remoteInputs=this._normState(v);
     this._remoteRecvMs=performance.now();
   }
+  _ensureRTC(){
+    return typeof RTCPeerConnection!=='undefined';
+  }
+  _mkPC(){
+    this.pc=new RTCPeerConnection({
+      iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]
+    });
+  }
+  _bindDC(dc,onOpen){
+    this.dc=dc;
+    dc.onopen=()=>{onOpen&&onOpen()};
+    dc.onmessage=e=>{
+      try{this._ingestRemote(JSON.parse(e.data))}
+      catch(err){console.warn('Bad RTC payload',err)}
+    };
+    dc.onerror=e=>console.warn('DataChannel error',e);
+  }
   static genCode(){
     const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     return Array.from({length:4},()=>c[Math.floor(Math.random()*c.length)]).join('');
@@ -429,52 +446,105 @@ class Network{
     }catch(e){console.error('Firebase init failed',e);return false}
   }
   host(code,onOpponentJoined,onError){
-    if(!this._ensureFirebase()){onError('Firebase not configured');return}
+    if(!this._ensureFirebase()||!this._ensureRTC()){onError('WebRTC/Firebase not available');return}
+    this.disconnect();
+    this.isHost=true;
     this.myKey='host';
     this.roomRef=this.db.ref(`boxnsocks/${code}`);
-    this.roomRef.once('value').then(snap=>{
+    this.roomRef.once('value').then(async snap=>{
       if(snap.exists()){onError('Room code in use, try again');return}
       this.roomRef.set({state:'waiting',ts:Date.now()});
       this.roomRef.onDisconnect().remove();
-      // Watch for guest
-      this.roomRef.child('state').on('value',snap=>{
-        if(snap.val()==='ready')onOpponentJoined();
+      this._mkPC();
+      this.pc.onicecandidate=e=>{
+        if(e.candidate)this.roomRef.child('hostCandidates').push(e.candidate.toJSON());
+      };
+      this._bindDC(this.pc.createDataChannel('inputs',{ordered:false,maxRetransmits:0}),()=>{
+        this.roomRef.child('state').set('ready');
+        onOpponentJoined();
       });
-      // Listen to guest inputs
-      this.roomRef.child('guest').on('value',snap=>{this._ingestRemote(snap.val())});
+      this.roomRef.child('answer').on('value',async s=>{
+        const ans=s.val();
+        if(!ans||this.pc.currentRemoteDescription)return;
+        try{await this.pc.setRemoteDescription(new RTCSessionDescription(ans))}
+        catch(e){console.error('setRemoteDescription(answer) failed',e)}
+      });
+      this.roomRef.child('guestCandidates').on('child_added',async s=>{
+        const c=s.val();if(!c)return;
+        try{await this.pc.addIceCandidate(new RTCIceCandidate(c))}
+        catch(e){console.warn('addIceCandidate(guest) failed',e)}
+      });
+      const offer=await this.pc.createOffer();
+      await this.pc.setLocalDescription(offer);
+      await this.roomRef.update({offer:this.pc.localDescription.toJSON(),state:'signaling'});
     }).catch(e=>onError('Network error: '+e.message));
   }
   join(code,onConnected,onError){
-    if(!this._ensureFirebase()){onError('Firebase not configured');return}
+    if(!this._ensureFirebase()||!this._ensureRTC()){onError('WebRTC/Firebase not available');return}
+    this.disconnect();
+    this.isHost=false;
     this.myKey='guest';
     this.roomRef=this.db.ref(`boxnsocks/${code}`);
-    this.roomRef.once('value').then(snap=>{
-      if(!snap.exists()||snap.child('state').val()!=='waiting'){
+    this.roomRef.once('value').then(async snap=>{
+      if(!snap.exists()){
         onError('Room not found. Check the code.');return;
       }
-      this.roomRef.child('guest').set({});
-      this.roomRef.child('state').set('ready');
-      this.roomRef.onDisconnect().remove();
-      // Listen to host inputs
-      this.roomRef.child('host').on('value',snap=>{this._ingestRemote(snap.val())});
-      onConnected();
+      let offer=snap.child('offer').val();
+      if(!offer){
+        offer=await new Promise((resolve,reject)=>{
+          const offerRef=this.roomRef.child('offer');
+          const onVal=s=>{
+            const v=s.val();
+            if(!v)return;
+            clearTimeout(tmr);
+            offerRef.off('value',onVal);
+            resolve(v);
+          };
+          const tmr=setTimeout(()=>{
+            offerRef.off('value',onVal);
+            reject(new Error('Host is not ready yet.'));
+          },8000);
+          offerRef.on('value',onVal);
+        }).catch(e=>{onError(e.message);return null});
+        if(!offer)return;
+      }
+      this._mkPC();
+      this.pc.onicecandidate=e=>{
+        if(e.candidate)this.roomRef.child('guestCandidates').push(e.candidate.toJSON());
+      };
+      this.pc.ondatachannel=ev=>{
+        this._bindDC(ev.channel,()=>{
+          this.roomRef.child('state').set('ready');
+          onConnected();
+        });
+      };
+      this.roomRef.child('hostCandidates').on('child_added',async s=>{
+        const c=s.val();if(!c)return;
+        try{await this.pc.addIceCandidate(new RTCIceCandidate(c))}
+        catch(e){console.warn('addIceCandidate(host) failed',e)}
+      });
+      await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer=await this.pc.createAnswer();
+      await this.pc.setLocalDescription(answer);
+      await this.roomRef.update({answer:this.pc.localDescription.toJSON(),state:'connecting'});
     }).catch(()=>onError('Connection failed. Check internet.'));
   }
   send(state){
-    if(!this.roomRef)return;
+    if(!this.dc||this.dc.readyState!=='open')return;
     const now=performance.now();
     if(now-this._lastSendMs<this._sendMinMs)return;
     this._lastSendMs=now;
-    const out=this._normState(state);
-    const sig=`${+out.left}${+out.right}${+out.up}${+out.down}${+out.block}|${out.punchTick}|${out.kickTick}`;
-    // Skip redundant writes for static input while still sending immediate changes.
-    if(sig===this._lastSentSig)return;
-    this._lastSentSig=sig;
-    this.roomRef.child(this.myKey).set(out);
+    this.dc.send(JSON.stringify(this._normState(state)));
   }
   disconnect(){
-    if(this.roomRef){this.roomRef.off();this.roomRef.remove();this.roomRef=null}
-    this.remoteInputs={};this._lastSentSig='';this._remoteRecvMs=0;
+    if(this.dc){try{this.dc.close()}catch{}this.dc=null}
+    if(this.pc){try{this.pc.close()}catch{}this.pc=null}
+    if(this.roomRef){
+      this.roomRef.off();
+      if(this.isHost)this.roomRef.remove();
+      this.roomRef=null;
+    }
+    this.remoteInputs={};this._remoteRecvMs=0;this.isHost=false;
   }
 }
 
