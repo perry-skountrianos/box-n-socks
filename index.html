@@ -1916,23 +1916,102 @@ class Game{
     ].forEach(([fn,x,y,sc,ph])=>fn(x,y,sc,ph));
     ctx.restore();
 
-    // ── Ring ─────────────────────────────────────────────────────────────────
-    ctx.fillStyle='rgba(0,0,0,0.42)';ctx.beginPath();ctx.moveTo(nL+8,nY+22);ctx.lineTo(nR+8,nY+22);ctx.lineTo(fR+8,fY+8);ctx.lineTo(fL+8,fY+8);ctx.closePath();ctx.fill();
-    const mat=ctx.createLinearGradient(0,fY,0,nY+20);mat.addColorStop(0,'#b5843c');mat.addColorStop(1,'#e4ba66');
-    ctx.fillStyle=mat;ctx.beginPath();ctx.moveTo(nL,nY+20);ctx.lineTo(nR,nY+20);ctx.lineTo(fR,fY);ctx.lineTo(fL,fY);ctx.closePath();ctx.fill();
-    const sheen=ctx.createLinearGradient(0,fY-18,0,nY+8);
-    sheen.addColorStop(0,'rgba(255,255,255,0.16)');sheen.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=sheen;ctx.beginPath();ctx.moveTo(nL,nY+20);ctx.lineTo(nR,nY+20);ctx.lineTo(fR,fY);ctx.lineTo(fL,fY);ctx.closePath();ctx.fill();
-    ctx.strokeStyle='rgba(155,118,50,0.32)';ctx.lineWidth=1;ctx.beginPath();
-    for(let d=0;d<=1;d+=.2){const y=lerp(fY,nY+20,d),xL=lerp(fL,nL,d),xR=lerp(fR,nR,d);ctx.moveTo(xL,y);ctx.lineTo(xR,y)}
-    for(let i=0;i<=10;i++){const tt=i/10;ctx.moveTo(lerp(nL,nR,tt),nY+20);ctx.lineTo(lerp(fL,fR,tt),fY)}
+    // ── Ancient Temple Arena ──────────────────────────────────────────────────
+    const glow=0.72+0.28*Math.sin(f*0.045); // pulsing energy glow
+
+    // Drop shadow under platform
+    ctx.fillStyle='rgba(0,0,0,0.48)';
+    ctx.beginPath();ctx.moveTo(nL+10,nY+24);ctx.lineTo(nR+10,nY+24);ctx.lineTo(fR+10,fY+10);ctx.lineTo(fL+10,fY+10);ctx.closePath();ctx.fill();
+
+    // Stone floor — dark mossy slabs
+    const stoneFloor=ctx.createLinearGradient(0,fY,0,nY+20);
+    stoneFloor.addColorStop(0,'#1c2e1a');
+    stoneFloor.addColorStop(0.5,'#243520');
+    stoneFloor.addColorStop(1,'#1a2a18');
+    ctx.fillStyle=stoneFloor;
+    ctx.beginPath();ctx.moveTo(nL,nY+20);ctx.lineTo(nR,nY+20);ctx.lineTo(fR,fY);ctx.lineTo(fL,fY);ctx.closePath();ctx.fill();
+
+    // Stone tile cracks/grid in perspective
+    ctx.strokeStyle='rgba(0,0,0,0.35)';ctx.lineWidth=1;ctx.beginPath();
+    for(let d=0;d<=1;d+=0.2){
+      const ty=lerp(fY,nY+20,d),txL=lerp(fL,nL,d),txR=lerp(fR,nR,d);
+      ctx.moveTo(txL,ty);ctx.lineTo(txR,ty);
+    }
+    for(let i=0;i<=8;i++){
+      const tt=i/8;ctx.moveTo(lerp(nL,nR,tt),nY+20);ctx.lineTo(lerp(fL,fR,tt),fY);
+    }
     ctx.stroke();
-    ctx.strokeStyle='rgba(200,165,90,0.5)';ctx.lineWidth=2.5;ctx.setLineDash([12,9]);
-    ctx.beginPath();ctx.moveTo(GW/2,nY+20);ctx.lineTo(GW/2,fY);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle='#7a5408';ctx.fillRect(nL,nY+20,nR-nL,14);
-    [[nL,nY,95],[nR,nY,95],[fL,fY,58],[fR,fY,58]].forEach(([px,py,h])=>{ctx.fillStyle='#7a5408';ctx.fillRect(px-9,py-h,18,h);ctx.fillStyle='#c8a020';ctx.fillRect(px-11,py-h-8,22,9)});
-    const rH=[34,58,82],rC=['#e41313','#f7f7f7','#e41313'];
-    rH.forEach((h,i)=>{const nh=h,fh=h*.62;ctx.strokeStyle=rC[i];ctx.lineWidth=i===1?5:4.5;ctx.beginPath();ctx.moveTo(nL,nY-nh);ctx.lineTo(nR,nY-nh);ctx.moveTo(fL,fY-fh);ctx.lineTo(fR,fY-fh);ctx.moveTo(nL,nY-nh);ctx.lineTo(fL,fY-fh);ctx.moveTo(nR,nY-nh);ctx.lineTo(fR,fY-fh);ctx.stroke()});
+    // Moss patches in corners
+    ctx.fillStyle='rgba(30,80,20,0.28)';
+    ctx.beginPath();ctx.ellipse(nL+28,nY+8,26,10,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(nR-28,nY+8,22,9,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(lerp(fL,fR,0.5),fY+6,30,8,0,0,Math.PI*2);ctx.fill();
+
+    // Glowing center rune circle
+    ctx.save();
+    ctx.globalAlpha=0.18*glow;
+    const rune=ctx.createRadialGradient(GW/2,lerp(fY,nY,0.5),0,GW/2,lerp(fY,nY,0.5),70);
+    rune.addColorStop(0,'#44ffaa');rune.addColorStop(1,'rgba(0,255,120,0)');
+    ctx.fillStyle=rune;ctx.beginPath();ctx.ellipse(GW/2,lerp(fY,nY,0.5),110,55,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // Center dividing rune line
+    ctx.save();ctx.globalAlpha=0.5*glow;ctx.strokeStyle='#44ffaa';ctx.lineWidth=1.5;
+    ctx.shadowColor='#44ffaa';ctx.shadowBlur=8*glow;ctx.setLineDash([8,6]);
+    ctx.beginPath();ctx.moveTo(GW/2,nY+20);ctx.lineTo(GW/2,fY);ctx.stroke();
+    ctx.setLineDash([]);ctx.restore();
+
+    // Floor edge — stone ledge at near side
+    ctx.fillStyle='#141e12';ctx.fillRect(nL,nY+20,nR-nL,14);
+    ctx.fillStyle='rgba(68,255,170,0.08)';ctx.fillRect(nL,nY+20,nR-nL,3);
+
+    // ── Crystal pylons at corners ─────────────────────────────────────────────
+    const drawPylon=(px,py,h,sc2)=>{
+      const pw=10*sc2,ph2=h*sc2;
+      // Stone base
+      ctx.fillStyle='#2a3a28';ctx.fillRect(px-pw*1.4,py,pw*2.8,10*sc2);
+      // Pillar shaft — dark stone
+      ctx.fillStyle='#1e2e1c';ctx.fillRect(px-pw*0.7,py-ph2,pw*1.4,ph2);
+      // Stone texture lines
+      ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=1;
+      for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(px-pw*.7,py-ph2*(i/4));ctx.lineTo(px+pw*.7,py-ph2*(i/4));ctx.stroke();}
+      // Crystal top — glowing gem
+      ctx.save();
+      ctx.shadowColor='#44ffaa';ctx.shadowBlur=18*glow;
+      ctx.fillStyle=`rgba(${Math.round(40+30*glow)},${Math.round(200+55*glow)},${Math.round(120+80*glow)},0.9)`;
+      ctx.beginPath();ctx.moveTo(px,py-ph2-18*sc2);ctx.lineTo(px+pw*.9,py-ph2);ctx.lineTo(px-pw*.9,py-ph2);ctx.closePath();ctx.fill();
+      ctx.fillStyle=`rgba(180,255,220,${0.5*glow})`;
+      ctx.beginPath();ctx.moveTo(px-2*sc2,py-ph2-16*sc2);ctx.lineTo(px+pw*.5,py-ph2);ctx.lineTo(px-pw*.5,py-ph2);ctx.closePath();ctx.fill();
+      ctx.restore();
+    };
+    drawPylon(nL,nY,88,1.0);drawPylon(nR,nY,88,1.0);
+    drawPylon(fL,fY,54,0.64);drawPylon(fR,fY,54,0.64);
+
+    // ── Energy barriers instead of ropes ─────────────────────────────────────
+    const beamHeights=[32,56,80]; // near heights
+    beamHeights.forEach((nh,i)=>{
+      const fh=nh*0.62;
+      const alpha=(0.55+0.18*(i/2))*glow;
+      const colors=['#22cc88','#44ffaa','#88ffcc'];
+      ctx.save();
+      ctx.strokeStyle=colors[i];ctx.lineWidth=i===1?3:2;
+      ctx.shadowColor=colors[i];ctx.shadowBlur=10*glow+(i*4);
+      ctx.globalAlpha=alpha;
+      ctx.beginPath();
+      // Near rope
+      ctx.moveTo(nL,nY-nh);ctx.lineTo(nR,nY-nh);
+      // Far rope
+      ctx.moveTo(fL,fY-fh);ctx.lineTo(fR,fY-fh);
+      // Side ropes
+      ctx.moveTo(nL,nY-nh);ctx.lineTo(fL,fY-fh);
+      ctx.moveTo(nR,nY-nh);ctx.lineTo(fR,fY-fh);
+      ctx.stroke();
+      // Energy glow fill between barriers
+      if(i===1){
+        ctx.globalAlpha=0.04*glow;ctx.fillStyle=colors[i];
+        ctx.beginPath();ctx.moveTo(nL,nY-nh);ctx.lineTo(nR,nY-nh);ctx.lineTo(fR,fY-fh);ctx.lineTo(fL,fY-fh);ctx.closePath();ctx.fill();
+      }
+      ctx.restore();
+    });
 
     // Vignette
     const vign=ctx.createRadialGradient(GW/2,GH*.45,110,GW/2,GH*.45,GH*.85);
