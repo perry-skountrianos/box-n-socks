@@ -602,13 +602,46 @@ class Fighter{
   }
   _drawAnimalBody(ctx,col,wc,punchType,punchTimer,punchDur){
     const punchExt=punchType==='punch'?Math.sin((1-punchTimer/punchDur)*Math.PI):0;
-    if(this.animal==='lion')      {this._drawLion(ctx,col,wc,punchExt);return}
-    if(this.animal==='cat')       {this._drawCat(ctx,col,wc,punchExt);return}
-    if(this.animal==='gorilla')   {this._drawGorilla(ctx,col,wc,punchExt);return}
-    if(this.animal==='rabbit')    {this._drawRabbit(ctx,col,wc,punchExt);return}
-    if(this.animal==='crocodile') {this._drawCrocodile(ctx,col,wc,punchExt);return}
-    if(this.animal==='ninjacat')  {this._drawNinjaCat(ctx,col,wc,punchExt);return}
-    this._drawElephant(ctx,col,wc,punchExt);
+    if(this.animal==='lion')      {this._drawLion(ctx,col,wc,punchExt);}
+    else if(this.animal==='cat')       {this._drawCat(ctx,col,wc,punchExt);}
+    else if(this.animal==='gorilla')   {this._drawGorilla(ctx,col,wc,punchExt);}
+    else if(this.animal==='rabbit')    {this._drawRabbit(ctx,col,wc,punchExt);}
+    else if(this.animal==='crocodile') {this._drawCrocodile(ctx,col,wc,punchExt);}
+    else if(this.animal==='ninjacat')  {this._drawNinjaCat(ctx,col,wc,punchExt);}
+    else {this._drawElephant(ctx,col,wc,punchExt);}
+    if(this.speedBoost>0)this._drawSocks(ctx,wc);
+  }
+  _drawSocks(ctx,wc){
+    // Draw striped socks over each foot (approximate positions work for all animals)
+    const lx=-12+wc*3, rx=12-wc*3;
+    const STRIPE=['#FF2200','#FFFFFF','#FF2200','#FFFFFF','#FF2200'];
+    for(const fx of [lx,rx]){
+      ctx.save();
+      // White sock base — lower leg tube
+      ctx.fillStyle='#FFFFFF';
+      this._r(ctx,fx-9,-22,18,22,3);
+      // Clip stripes to tube
+      ctx.save();
+      ctx.beginPath();ctx.rect(fx-9,-22,18,22);ctx.clip();
+      for(let i=0;i<STRIPE.length;i++){
+        ctx.fillStyle=STRIPE[i];ctx.fillRect(fx-9,-22+i*5,18,5);
+      }
+      ctx.restore();
+      // Toe ellipse (foot of sock)
+      ctx.fillStyle='#FFFFFF';
+      ctx.beginPath();ctx.ellipse(fx+4,0,13,5,0.15,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#FF2200';
+      ctx.beginPath();ctx.ellipse(fx+4,0,13,2,0.15,0,Math.PI*2);ctx.fill();
+      // Cuff at top
+      ctx.fillStyle='#FF2200';
+      this._r(ctx,fx-10,-28,20,8,3);
+      ctx.fillStyle='#FFFFFF';
+      ctx.fillRect(fx-9,-27,18,5);
+      // Polka dots on cuff
+      ctx.fillStyle='#FF2200';
+      for(let d=0;d<3;d++){ctx.beginPath();ctx.arc(fx-4+d*4,-25,1.5,0,Math.PI*2);ctx.fill();}
+      ctx.restore();
+    }
   }
   _drawElephant(ctx,col,wc,punchExt){
     ctx.fillStyle=col.shoe;
@@ -1225,7 +1258,7 @@ class Game{
         }
 
         if(nearestPU&&nearestPUDist>18){
-          // Chase banana aggressively — ignore retreat/combat spacing
+          // Chase sock aggressively — ignore retreat/combat spacing
           const bDx=nearestPU.x-ai.x, bDz=nearestPU.dz-ai.dz;
           mvL=bDx<-4;mvR=bDx>4;
           mvU=bDz<-0.03;mvD=bDz>0.03;
@@ -1263,7 +1296,7 @@ class Game{
         this._ls2=aiS;
         this.fighters[1].applyInput(aiS);
       }
-      // ── Power-up bananas ────────────────────────────────────────────────
+      // ── Power-up socks ──────────────────────────────────────────────────
       if(this._powerupTimer>0)this._powerupTimer--;
       else if(this._powerups.length<2){
         const px=RG.nL+60+Math.random()*(RG.nR-RG.nL-120);
@@ -1282,7 +1315,7 @@ class Game{
           if(pu.landed&&Math.abs(f.x-pu.x)<32*fs&&Math.abs(f.dz-pu.dz)<0.18){
             f.speedBoost=300;
             this.audio.sfxPowerup();
-            this.effects.push(new HitEffect(f.x,f.sy-80,'BANANA BOOST! 🍌','#FFD700'));
+            this.effects.push(new HitEffect(f.x,f.sy-80,'SOCK BOOST! 🧦','#FF69B4'));
             return false;
           }
         }
@@ -1666,34 +1699,35 @@ class Game{
     if(this.state!=='title'){
       const myF=this.fighters[this.myIdx];
       [...this.fighters].sort((a,b)=>a.dz-b.dz).forEach(f=>f.draw(ctx,f===myF));
-      // Draw power-up bananas
+      // Draw power-up socks
       for(const pu of this._powerups){
         const py=RG.fY+pu.dz*(RG.nY-RG.fY)+(pu.landed?0:pu.fallY);
         const sc=FAR_SC+pu.dz*(NEAR_SC-FAR_SC);
         const glow=pu.landed?(0.6+0.4*Math.sin(pu.pulse*.12)):0;
         ctx.save();ctx.translate(pu.x,py);ctx.scale(sc*1.1,sc*1.1);
-        if(pu.landed){ctx.shadowColor='#FFD700';ctx.shadowBlur=12*glow;}
-        // Single banana — curved crescent shape
-        ctx.save();ctx.rotate(-0.3);
-        // Outer curve (back of banana)
-        ctx.beginPath();
-        ctx.moveTo(-4,-22);
-        ctx.bezierCurveTo(18,-20, 26,4, 14,20);
-        ctx.bezierCurveTo(10,26, 4,24, 2,18);
-        ctx.bezierCurveTo(12,6, 6,-12, -4,-22);
-        ctx.closePath();
-        ctx.fillStyle='#FFE033';ctx.fill();
-        // Inner highlight stripe
-        ctx.beginPath();
-        ctx.moveTo(-1,-16);
-        ctx.bezierCurveTo(14,-14, 20,4, 10,17);
-        ctx.bezierCurveTo(8,14, 14,2, 2,-14);
-        ctx.closePath();
-        ctx.fillStyle='#FFF176';ctx.fill();
-        // Tip nubs
-        ctx.fillStyle='#8B6200';
-        ctx.beginPath();ctx.ellipse(-4,-22,3,4,0.4,0,Math.PI*2);ctx.fill();
-        ctx.beginPath();ctx.ellipse(14,20,2.5,3.5,-0.3,0,Math.PI*2);ctx.fill();
+        if(pu.landed){ctx.shadowColor='#FF69B4';ctx.shadowBlur=14*glow;}
+        // Sock icon — side-view L-shape
+        ctx.save();ctx.rotate(-0.2);
+        // White sock body (leg tube)
+        ctx.fillStyle='#FFFFFF';
+        ctx.beginPath();ctx.roundRect(-9,-30,18,26,4);ctx.fill();
+        // Foot of sock
+        ctx.beginPath();ctx.ellipse(9,-5,13,7,0.15,0,Math.PI*2);ctx.fill();
+        // Red stripes on tube
+        ctx.save();ctx.beginPath();ctx.rect(-9,-30,18,26);ctx.clip();
+        ctx.fillStyle='#FF2200';
+        ctx.fillRect(-9,-26,18,5);ctx.fillRect(-9,-16,18,5);ctx.fillRect(-9,-6,18,5);
+        ctx.restore();
+        // Red stripe on foot
+        ctx.fillStyle='#FF2200';
+        ctx.beginPath();ctx.ellipse(9,-5,13,2.5,0.15,0,Math.PI*2);ctx.fill();
+        // Red cuff at top with polka dots
+        ctx.fillStyle='#FF2200';
+        ctx.beginPath();ctx.roundRect(-10,-36,20,8,3);ctx.fill();
+        ctx.fillStyle='#FFFFFF';
+        ctx.fillRect(-9,-35,18,5);
+        ctx.fillStyle='#FF2200';
+        for(let d=0;d<3;d++){ctx.beginPath();ctx.arc(-4+d*4,-33,1.5,0,Math.PI*2);ctx.fill();}
         ctx.restore();
         ctx.shadowBlur=0;ctx.restore();
       }
