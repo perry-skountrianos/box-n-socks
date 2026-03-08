@@ -721,6 +721,7 @@ class Network{
       animal:ANIMALS.includes(v.animal)?v.animal:'elephant',
       roundScore:+(v.roundScore)||0,
       totalScore:+(v.totalScore)||0,
+      oppStreak:(v.oppStreak|0),
     };
   }
   _ingestRemote(v){
@@ -753,7 +754,7 @@ class Network{
     if(out.up)flags|=4;
     if(out.down)flags|=8;
     flags|=(ANIMAL_BITS[out.animal]||0)<<4;
-    const buf=new ArrayBuffer(9);
+    const buf=new ArrayBuffer(10);
     const dv=new DataView(buf);
     dv.setUint8(0,flags);
     dv.setUint16(1,out.attackTick&0xffff,true);
@@ -761,6 +762,7 @@ class Network{
     dv.setUint8(4,(out.squatTick||0)&0xff);
     dv.setUint16(5,Math.round((out.roundScore||0)*10)&0xffff,true);
     dv.setUint16(7,Math.round((out.totalScore||0)*10)&0xffff,true);
+    dv.setUint8(9,(out.oppStreak||0)&0xff);
     return buf;
   }
   _unpackState(buf){
@@ -777,6 +779,7 @@ class Network{
       squatTick:buf.byteLength>=5?dv.getUint8(4):0,
       roundScore:buf.byteLength>=7?dv.getUint16(5,true)/10:0,
       totalScore:buf.byteLength>=9?dv.getUint16(7,true)/10:0,
+      oppStreak:buf.byteLength>=10?dv.getUint8(9):0,
     };
   }
   _ingestMessage(data){
@@ -984,6 +987,7 @@ class Game{
         const myF=this.fighters[this.myIdx],oppF=this.fighters[1-this.myIdx];
         localS.roundScore=myF.roundScore;
         localS.totalScore=myF.totalScore;
+        localS.oppStreak=oppF.noHitStreak;
         this.net.send(localS);
         myF.applyInput(localS);
         const rem=this.net.remoteInputs;
@@ -991,6 +995,19 @@ class Game{
         // Remote player is authoritative for their own scores
         if(rem.roundScore!=null)oppF.roundScore=rem.roundScore;
         if(rem.totalScore!=null)oppF.totalScore=rem.totalScore;
+        // Remote player is authoritative for knockdown state of local fighter
+        if(rem.oppStreak!=null){
+          myF.noHitStreak=rem.oppStreak;
+          const mySt=ANIMAL_STATS[myF.animal]||ANIMAL_STATS.elephant;
+          if(myF.noHitStreak>=mySt.knockdownHits&&myF.downTimer<=0){
+            myF.noHitStreak=0;
+            myF.downTimer=KNOCKDOWN_FRAMES;
+            myF.punchType=null;myF.punchTimer=0;
+            myF.kbx=0;myF.kbz=0;
+            this.audio.sfxBell();
+            this.effects.push(new HitEffect(myF.x,myF.sy-118,'KNOCKOUT!','#FFD700'));
+          }
+        }
         oppF.applyInput(rem);
       }else if(this.mode==='ai'){
         const localS=mkState(inp,CTRL_ONLINE,this._ls1||{});
