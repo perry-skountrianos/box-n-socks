@@ -324,6 +324,31 @@ class AudioEngine{
   sfxKick(){if(!this.ac)return;const t=this.ac.currentTime;this._noise(350,.45,t,.07);const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(45,t+.13);g.gain.setValueAtTime(.75,t);g.gain.exponentialRampToValueAtTime(.0001,t+.15);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+.16)}
   sfxBlock(){if(!this.ac)return;this._noise(600,.28,this.ac.currentTime,.07)}
   sfxBell(){if(!this.ac)return;[880,1108,1320].forEach((hz,i)=>{const t=this.ac.currentTime+i*.022;const o=this.ac.createOscillator(),g=this.ac.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.36/(i+1),t);g.gain.exponentialRampToValueAtTime(.0001,t+1.6);o.connect(g);g.connect(this.ac.destination);o.start(t);o.stop(t+1.65)})}
+  sfxRoar(animal){
+    if(!this.ac)return;const t=this.ac.currentTime;
+    const freqs={elephant:[55,82,110],gorilla:[73,98,146],lion:[110,147,165],
+                 cat:[220,294,330],rabbit:[330,440,523],crocodile:[82,110,147]};
+    const hz=(freqs[animal]||freqs.lion);
+    hz.forEach((f,i)=>{
+      const o=this.ac.createOscillator(),g=this.ac.createGain();
+      o.type=i===0?'sawtooth':'triangle';o.frequency.value=f;
+      g.gain.setValueAtTime(.0,t+i*.04);g.gain.linearRampToValueAtTime(.55-i*.12,t+i*.04+.06);
+      g.gain.exponentialRampToValueAtTime(.0001,t+i*.04+.55);
+      o.connect(g);g.connect(this.ac.destination);o.start(t+i*.04);o.stop(t+i*.04+.56);
+    });
+    this._noise(200,.3,t,.25);
+  }
+  sfxCrowdBoo(){
+    if(!this.ac)return;const t=this.ac.currentTime;
+    // Descending "boooo" tone cluster
+    [220,233,196].forEach((hz,i)=>{
+      const o=this.ac.createOscillator(),g=this.ac.createGain();
+      o.type='sine';o.frequency.setValueAtTime(hz,t+i*.02);
+      o.frequency.linearRampToValueAtTime(hz*.85,t+.5);
+      g.gain.setValueAtTime(.12,t+i*.02);g.gain.exponentialRampToValueAtTime(.0001,t+.55);
+      o.connect(g);g.connect(this.ac.destination);o.start(t+i*.02);o.stop(t+.56);
+    });
+  }
   sfxPowerup(){
     if(!this.ac)return;const t=this.ac.currentTime;
     [523,659,784,1047].forEach((hz,i)=>{
@@ -376,6 +401,7 @@ class Fighter{
     this.comboTimer=0;
     this.speedBoost=0;
     this.raging=false;
+    this.missStreak=0;
   }
   get sy(){const base=RG.fY+this.dz*(RG.nY-RG.fY);return this.jumpTimer>0?base-Math.sin(this.jumpTimer/36*Math.PI)*78*this.sc:base;}
   get groundY(){return RG.fY+this.dz*(RG.nY-RG.fY)}
@@ -425,7 +451,7 @@ class Fighter{
         this.punchHit=false;
       }
     }
-    if(this.punchType){this.punchTimer--;if(this.punchTimer<=0){this.punchType=null;this.cooldown=ast.cooldown}}
+    if(this.punchType){this.punchTimer--;if(this.punchTimer<=0){if(!this.punchHit)this.missStreak++;else this.missStreak=0;this.punchType=null;this.cooldown=ast.cooldown}}
     if(this.cooldown>0)this.cooldown--;
     if(this.hitFlash>0)this.hitFlash--;
     if(this.comboTimer>0)this.comboTimer--;else if(this.comboTimer===0&&this.comboCount>0)this.comboCount=0;
@@ -1105,6 +1131,10 @@ class Game{
         }
         return pu.pulse<900; // despawn after 15s on ground
       });
+      // ── Miss streak boo ─────────────────────────────────────────────────
+      for(const mf of this.fighters){
+        if(mf.missStreak===3){this.audio.sfxCrowdBoo();this.effects.push(new HitEffect(mf.x,mf.sy-105,'MISS! 😂','#888888'));}
+      }
       // ── Rage mode ───────────────────────────────────────────────────────
       const[rf1,rf2]=this.fighters;
       const prevRage1=rf1.raging,prevRage2=rf2.raging;
@@ -1170,9 +1200,11 @@ class Game{
     const[f1,f2]=this.fighters;
     f1.totalScore+=f1.roundScore;f2.totalScore+=f2.roundScore;
     const isAI=this.mode==='ai';
-    if(f1.roundScore>f2.roundScore){f1.roundsWon++;this.msg=isAI?`You win round ${this.round}!`:`RED wins round ${this.round}!`}
-    else if(f2.roundScore>f1.roundScore){f2.roundsWon++;this.msg=isAI?'CPU wins round!!!':`BLUE wins round ${this.round}!`}
+    let winner=null;
+    if(f1.roundScore>f2.roundScore){f1.roundsWon++;this.msg=isAI?`You win round ${this.round}!`:`RED wins round ${this.round}!`;winner=f1;}
+    else if(f2.roundScore>f1.roundScore){f2.roundsWon++;this.msg=isAI?'CPU wins round!!!':`BLUE wins round ${this.round}!`;winner=f2;}
     else{this.msg=`Round ${this.round} — DRAW!`}
+    if(winner)setTimeout(()=>this.audio.sfxRoar(winner.animal),300);
     this.msgT=this.round<TOTAL_ROUNDS?190:90;
   }
 
